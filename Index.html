@@ -1,1 +1,1972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>BLOCK ARENA — Ranked PvP</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#111;font-family:"Courier New",Consolas,monospace;color:#fff;user-select:none;touch-action:none}
+canvas{display:block;position:fixed;inset:0}
+.mc{text-shadow:2px 2px 0 #2b2b2b;font-weight:bold;letter-spacing:.5px}
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10}
 
+/* crosshair */
+#cross{position:absolute;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%);opacity:.85}
+#cross:before,#cross:after{content:"";position:absolute;background:#fff;mix-blend-mode:difference}
+#cross:before{left:50%;top:0;width:2px;height:100%;margin-left:-1px}
+#cross:after{top:50%;left:0;height:2px;width:100%;margin-top:-1px}
+#hitmark{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:26px;color:#ff5a5a;opacity:0;transition:opacity .1s}
+#hitmark.on{opacity:1}
+
+/* bottom left: health / hotbar */
+#bottom{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px}
+#hearts{display:flex;gap:3px}
+.heart{width:15px;height:14px;background:#3a1414;clip-path:polygon(20% 0,40% 0,50% 15%,60% 0,80% 0,100% 25%,100% 45%,50% 100%,0 45%,0 25%)}
+.heart.full{background:#e33}
+.heart.half{background:linear-gradient(90deg,#e33 50%,#3a1414 50%)}
+#hotbar{display:flex;gap:3px;padding:3px;background:rgba(0,0,0,.55);border:2px solid #6b6b6b}
+.slot{width:48px;height:48px;background:rgba(139,139,139,.35);border:2px solid #3d3d3d;position:relative;pointer-events:auto;display:flex;align-items:center;justify-content:center;font-size:9px;text-align:center;line-height:1.05;padding:2px}
+.slot.sel{border-color:#fff;background:rgba(255,255,255,.18)}
+.slot small{position:absolute;bottom:1px;right:3px;font-size:8px;opacity:.8}
+
+/* top left stats */
+#stats{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.45);border:2px solid #555;padding:8px 10px;font-size:12px;min-width:210px}
+#xpbar{height:9px;background:#222;border:1px solid #000;margin-top:5px}
+#xpfill{height:100%;width:0%;background:linear-gradient(90deg,#7ee36b,#3ea82c)}
+#coins{color:#ffd84b;margin-top:5px}
+
+/* leaderboard */
+#board{position:absolute;right:10px;top:10px;background:rgba(0,0,0,.45);border:2px solid #555;padding:6px 8px;font-size:11px;min-width:190px}
+#board b{color:#ffd84b}
+#board div{display:flex;justify-content:space-between;gap:10px}
+#board .me{color:#7ee36b}
+
+/* feeds */
+#kills{position:absolute;right:10px;top:190px;font-size:11px;text-align:right;width:280px}
+#kills div{margin-bottom:3px;background:rgba(0,0,0,.35);padding:2px 5px;display:inline-block}
+#chat{position:absolute;left:10px;bottom:110px;font-size:11px;width:340px;max-height:150px;overflow:hidden}
+#chat div{margin-bottom:2px;background:rgba(0,0,0,.35);padding:1px 5px;display:inline-block}
+
+#banner{position:absolute;left:50%;top:18%;transform:translateX(-50%);text-align:center;font-size:26px;opacity:0;transition:opacity .4s}
+#banner small{display:block;font-size:13px;opacity:.85;margin-top:4px}
+#toast{position:absolute;left:50%;top:46%;transform:translateX(-50%);text-align:center;font-size:15px;opacity:0;transition:opacity .3s;background:rgba(0,0,0,.5);padding:6px 12px}
+#hurt{position:absolute;inset:0;background:radial-gradient(circle,rgba(255,0,0,0) 40%,rgba(255,0,0,.55) 100%);opacity:0;transition:opacity .25s}
+.pop{position:absolute;font-size:14px;font-weight:bold;text-shadow:2px 2px 0 #000;pointer-events:none}
+
+/* overlays */
+.ov{position:fixed;inset:0;z-index:30;background:rgba(8,10,14,.93);display:flex;align-items:center;justify-content:center;flex-direction:column;padding:16px;overflow:auto}
+.ov.hide{display:none}
+.panel{max-width:560px;width:100%;border:3px solid #6b6b6b;background:#2b2b2b;padding:16px}
+h1{font-size:26px;text-align:center;margin-bottom:6px;color:#ffd84b}
+h2{font-size:16px;margin:10px 0 6px;color:#8ee27a}
+p,li{font-size:12px;line-height:1.6}
+ul{padding-left:18px}
+.btn{display:block;width:100%;margin-top:12px;padding:12px;background:#6b9e4f;border:3px solid #2f4d20;color:#fff;font:bold 15px "Courier New",monospace;cursor:pointer;pointer-events:auto}
+.btn:active{background:#588240}
+.btn.grey{background:#5a5a5a;border-color:#333}
+.cols{display:flex;gap:10px;flex-wrap:wrap}
+.cols>div{flex:1 1 45%}
+.item{border:2px solid #555;background:#3a3a3a;padding:6px;font-size:11px;margin-bottom:5px;cursor:pointer}
+.item:active{background:#4a4a4a}
+.item.no{opacity:.4}
+.item.own{border-color:#7ee36b}
+.item b{display:block;font-size:12px}
+.cost{color:#ffd84b}
+#shopTop{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:8px}
+
+/* mobile controls */
+#mob{position:fixed;inset:0;z-index:20;display:none;pointer-events:none}
+#mob.on{display:block}
+#stick{position:absolute;left:16px;bottom:20px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);pointer-events:auto}
+#knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.5)}
+.mbtn{position:absolute;border-radius:50%;background:rgba(0,0,0,.4);border:3px solid rgba(255,255,255,.35);color:#fff;font:bold 12px "Courier New",monospace;display:flex;align-items:center;justify-content:center;pointer-events:auto;text-align:center;line-height:1.1}
+.mbtn:active,.mbtn.on{background:rgba(255,255,255,.35)}
+#bAtk{right:20px;bottom:26px;width:104px;height:104px;font-size:15px}
+#bJmp{right:132px;bottom:40px;width:72px;height:72px}
+#bSpr{right:26px;bottom:142px;width:68px;height:68px}
+#bBlk{right:112px;bottom:150px;width:64px;height:64px}
+#bShop{right:16px;top:120px;width:62px;height:62px;border-radius:8px}
+#bCrouch{left:150px;bottom:32px;width:60px;height:60px;font-size:11px}
+@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="cross"></div><div id="hitmark">✕</div>
+  <div id="hurt"></div>
+  <div id="stats" class="mc">
+    <div id="rankLine">RANK: NOOB</div>
+    <div id="arenaLine" style="opacity:.8">ARENA: NOOB PIT</div>
+    <div id="xpbar"><div id="xpfill"></div></div>
+    <div id="xptext" style="font-size:10px;opacity:.75"></div>
+    <div id="coins">⛃ 0 coins</div>
+    <div id="wep" style="font-size:10px;opacity:.85"></div>
+  </div>
+  <div id="board" class="mc"></div>
+  <div id="kills" class="mc"></div>
+  <div id="chat" class="mc"></div>
+  <div id="banner" class="mc"></div>
+  <div id="toast" class="mc"></div>
+  <div id="bottom">
+    <div id="hearts"></div>
+    <div id="hotbar"></div>
+  </div>
+</div>
+
+<div id="mob">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="mbtn" id="bAtk">ATTACK</div>
+  <div class="mbtn" id="bJmp">JUMP</div>
+  <div class="mbtn" id="bSpr">SPRINT</div>
+  <div class="mbtn" id="bBlk">BLOCK</div>
+  <div class="mbtn" id="bShop">SHOP</div>
+  <div class="mbtn" id="bCrouch">CROUCH</div>
+</div>
+
+<div class="ov" id="start">
+  <div class="panel">
+    <h1 class="mc">BLOCK ARENA</h1>
+    <p style="text-align:center">Free-for-all ranked PvP · 5 arenas · earn XP, rank up, unlock better gear.</p>
+    <h2>RANKS</h2>
+    <p>NOOB → PRO → ELITE → MASTER → LEGEND. Each rank unlocks the next arena portal and better weapon materials.</p>
+    <h2>PC CONTROLS</h2>
+    <ul>
+      <li>WASD move · SHIFT sprint · SPACE jump</li>
+      <li>Mouse look · LEFT CLICK attack · RIGHT CLICK block</li>
+      <li>1-9 switch weapon · E shop (near gold block) · TAB board · ESC release mouse</li>
+    </ul>
+    <h2>MOBILE CONTROLS</h2>
+    <ul><li>Left stick move · drag right side to look · buttons for attack / jump / sprint / block / shop</li></ul>
+    <h2>TIPS</h2>
+    <ul><li>Jump-hit for crits (+50% dmg). Sprint-hit for big knockback.</li>
+    <li>The whole arena is live PvP — use cover and retreat when hurt.</li>
+    <li>Spears out-range swords. Maces hit hardest but slowest.</li></ul>
+    <button class="btn" id="playBtn">PLAY</button>
+  </div>
+</div>
+
+<div class="ov hide" id="shop">
+  <div class="panel">
+    <div id="shopTop" class="mc"><span>⚒ WEAPON SHOP</span><span id="shopCoins" class="cost">⛃ 0</span></div>
+    <div id="shopBody"></div>
+    <button class="btn grey" id="closeShop">CLOSE</button>
+  </div>
+</div>
+
+<div class="ov hide" id="dead">
+  <div class="panel">
+    <h1 class="mc" style="color:#e35">YOU DIED</h1>
+    <p id="deadTxt" style="text-align:center"></p>
+    <button class="btn" id="respawnBtn">RESPAWN</button>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================ UTILS */
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const irnd=(a,b)=>Math.floor(rnd(a,b+1));
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+function angLerp(a,b,t){let d=((b-a+Math.PI)%(Math.PI*2))-Math.PI;if(d<-Math.PI)d+=Math.PI*2;return a+d*t;}
+const now=()=>performance.now()/1000;
+
+/* --------- tiny sound engine (WebAudio blips) --------- */
+let AC=null,sndOn=true;
+function beep(f,d,type='square',vol=.06,slide=0){
+  if(!sndOn)return; try{
+    if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type=type;o.frequency.value=f;
+    if(slide)o.frequency.linearRampToValueAtTime(f+slide,AC.currentTime+d);
+    g.gain.value=vol;g.gain.exponentialRampToValueAtTime(0.0005,AC.currentTime+d);
+    o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d);
+  }catch(e){}
+}
+const S={hit:()=>beep(220,.09,'square',.05,60),crit:()=>beep(520,.12,'square',.06,-180),
+  hurt:()=>beep(140,.14,'sawtooth',.07,-40),die:()=>{beep(180,.18,'square',.06,-120);setTimeout(()=>beep(110,.25,'square',.05,-60),120);},
+  buy:()=>beep(700,.08,'triangle',.05,200),lvl:()=>{[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.15,'triangle',.05),i*90));},
+  swing:()=>beep(90,.05,'sine',.03,40),block:()=>beep(300,.06,'triangle',.04)};
+
+/* ============================================================ TEXTURES (16x16 pixel art) */
+const TEXCACHE={};
+function noiseTex(base,spots,detail=0.35,lines=null){
+  const c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');
+  x.fillStyle=base;x.fillRect(0,0,16,16);
+  for(let i=0;i<16*16*detail;i++){x.fillStyle=pick(spots);x.fillRect(irnd(0,15),irnd(0,15),1,1);}
+  if(lines){x.fillStyle=lines;for(let y=3;y<16;y+=4)x.fillRect(0,y,16,1);}
+  return c;
+}
+function makeTex(name){
+  if(TEXCACHE[name])return TEXCACHE[name];
+  let c;
+  switch(name){
+    case 'grass': c=noiseTex('#5d9c3a',['#6cb043','#4f8a30','#77bd4c']);break;
+    case 'dirt':  c=noiseTex('#8a5f38',['#7a5230','#9b6d42','#6e4a2b']);break;
+    case 'stone': c=noiseTex('#8d8d8d',['#7d7d7d','#9b9b9b','#757575']);break;
+    case 'stonebrick': c=noiseTex('#7f7f7f',['#6f6f6f','#8f8f8f'],.3,'#5a5a5a');break;
+    case 'oak':   c=noiseTex('#a9803f',['#96702f','#b98d4c'],.25,'#7d5c28');break;
+    case 'log':   c=noiseTex('#6b4c25',['#7d5a2c','#5b3f1e'],.4);break;
+    case 'sand':  c=noiseTex('#e2d3a2',['#d8c692','#eddfb2']);break;
+    case 'sandstone': c=noiseTex('#dccb96',['#cdbb86','#e9d9a8'],.25,'#c0ae7a');break;
+    case 'quartz':c=noiseTex('#eae6df',['#dedad3','#f4f1ec'],.2);break;
+    case 'snow':  c=noiseTex('#f2fbff',['#e3f0f7','#ffffff'],.2);break;
+    case 'ice':   c=noiseTex('#9fd6ee',['#8ec8e4','#b5e4f7'],.3);break;
+    case 'nether':c=noiseTex('#6d2320',['#7d2a26','#5a1a18','#8a3b2f']);break;
+    case 'obsid': c=noiseTex('#1b1226',['#241a33','#120c1b','#2e2140']);break;
+    case 'gold':  c=noiseTex('#f2c93c',['#ffe37a','#d9ab22'],.3);break;
+    case 'diamond':c=noiseTex('#5fe3d8',['#8ff2ea','#3fbdb4'],.3);break;
+    case 'iron':  c=noiseTex('#d6d6d6',['#c2c2c2','#eaeaea'],.25);break;
+    case 'glow':  c=noiseTex('#ffd97a',['#ffeaa8','#e8b94f'],.35);break;
+    case 'emerald':c=noiseTex('#39c26a',['#59e08a','#26a052'],.3);break;
+    case 'face': {
+      c=document.createElement('canvas');c.width=c.height=16;const x=c.getContext('2d');
+      x.fillStyle='#c69b6b';x.fillRect(0,0,16,16);
+      x.fillStyle='#8a6a45';for(let i=0;i<26;i++)x.fillRect(irnd(0,15),irnd(0,4),1,1);
+      x.fillStyle='#fff';x.fillRect(3,7,3,2);x.fillRect(10,7,3,2);
+      x.fillStyle='#3a2ea0';x.fillRect(4,7,2,2);x.fillRect(11,7,2,2);
+      x.fillStyle='#6b4a2c';x.fillRect(5,11,6,1);
+      break;}
+    default: c=noiseTex('#888',['#777','#999']);
+  }
+  const t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestFilter;
+  t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  TEXCACHE[name]=t;return t;
+}
+function tiled(name,rx,ry){const t=makeTex(name).clone();t.needsUpdate=true;t.repeat.set(rx,ry);DISPOSE.push(t);return t;}
+
+/* ============================================================ DATA */
+const MATS=[
+  {id:'wood',   name:'Wooden',  mult:1.00, cd:1.00, col:0x8f6a37, cost:1,   rank:0},
+  {id:'stone',  name:'Stone',   mult:1.22, cd:1.00, col:0x9a9a9a, cost:1.9, rank:0},
+  {id:'iron',   name:'Iron',    mult:1.48, cd:0.95, col:0xd8d8d8, cost:3.4, rank:1},
+  {id:'gold',   name:'Gold',    mult:1.34, cd:0.78, col:0xf2c93c, cost:5.2, rank:2},
+  {id:'diamond',name:'Diamond', mult:1.80, cd:0.92, col:0x5fe3d8, cost:8.5, rank:3},
+];
+const TYPES=[
+  {id:'sword',name:'Sword',dmg:6.0,cd:0.52,reach:3.1,kb:1.00,cost:42},
+  {id:'axe',  name:'Axe',  dmg:8.6,cd:0.86,reach:3.0,kb:1.10,cost:56},
+  {id:'spear',name:'Spear',dmg:7.0,cd:0.72,reach:4.3,kb:0.90,cost:52},
+  {id:'mace', name:'Mace', dmg:11.0,cd:1.12,reach:2.8,kb:1.80,cost:68},
+];
+const ARMORS=[
+  {name:'No Armor',red:0,cost:0,rank:0,col:0x555555},
+  {name:'Leather',red:0.14,cost:70,rank:0,col:0x8d5a34},
+  {name:'Chainmail',red:0.24,cost:160,rank:1,col:0x9aa0a6},
+  {name:'Iron Armor',red:0.34,cost:340,rank:2,col:0xdadada},
+  {name:'Diamond Armor',red:0.46,cost:760,rank:3,col:0x5fe3d8},
+];
+const RANKS=[
+  {name:'NOOB',  xp:0,    col:'#9fd35a'},
+  {name:'PRO',   xp:220,  col:'#5ad2e8'},
+  {name:'ELITE', xp:600,  col:'#c46ef0'},
+  {name:'MASTER',xp:1300, col:'#f0a13c'},
+  {name:'LEGEND',xp:2400, col:'#ff5a5a'},
+];
+const ARENAS=[
+  {name:'NOOB PIT',      size:90, npcs:6, tiers:[0,1],hp:100,floor:'grass',   accent:'oak',     wall:'log',      sky:0x8fd0ff,fog:[60,190],reward:1.0},
+  {name:'PRO GROUNDS',   size:96, npcs:7, tiers:[1,2],hp:112,floor:'sand',    accent:'sandstone',wall:'sandstone',sky:0xffdf9e,fog:[65,200],reward:1.5},
+  {name:'ELITE COLOSSEUM',size:102,npcs:8,tiers:[2,3],hp:126,floor:'stone',   accent:'stonebrick',wall:'stonebrick',sky:0x9fb3c9,fog:[70,205],reward:2.2},
+  {name:'MASTER CITADEL',size:108,npcs:9, tiers:[3,4],hp:142,floor:'snow',    accent:'ice',     wall:'quartz',   sky:0xe8f6ff,fog:[72,215],reward:3.2},
+  {name:'LEGEND NETHER', size:114,npcs:10,tiers:[4,4],hp:160,floor:'nether',  accent:'obsid',   wall:'obsid',    sky:0x3d100e,fog:[34,120],reward:4.5},
+];
+const NAME_A=['xX','Mc','Pro','Noob','Dark','Ender','Crystal','Sweaty','Yt','Toxic','Ghost','Cracked','Lag','Zen','Frost','Blaze','Void','Ka','Op','Tiny'];
+const NAME_B=['Dragon','Miner','Slayer','Crafter','Sniper','Reaper','Panda','Wolf','Steve','Alex','God','Clutch','Potato','Ninja','Titan','Fox','Bee','Golem','Wither','Llama'];
+const NAME_C=['','_YT','69','420','xX','_TTV','1','07','_pvp','X','_gg','99','_23','TV','ツ'];
+const genName=()=>pick(NAME_A)+pick(NAME_B)+pick(NAME_C);
+
+const CHAT={
+  kill:['ez','gg','get gud','L + ratio','who next?','that was clean','skill issue','+1','o7','npc behaviour'],
+  death:['LAG!!','bro what','my ping 400','reach hacks??','one shot?? rly','gg wp','ok ok nice','i was afk','frame drop'],
+  low:['need a potion','running running','need cover','tactical retreat','no no no','backing off'], 
+  shop:['shopping brb','buying upgrade','need better gear','saving coins','one sec, shop'],
+  buy:['new gear ready','lets test this','sharpened up','ok now im scary'],
+  taunt:['1v1 me','stop camping','fight me coward','anyone wanna duel','free kill here'],
+  idle:['anyone from noob pit?','how much xp u got','this arena mid','wheres everyone','who tp to me','my keyboard sticky','team?','no teaming!!'],
+  camp:['stop hiding','come out lol','camper detected','touch grass'],
+  revenge:['YOU.','i remember you...','not this time','been waiting for this','you again??'],
+  celebrate:['LMAOO','finally someone got him','karma fr','ratio','no more running now'],
+  respect:['gg well played','respect 🤝','no hard feelings','solid fight ngl'],
+  mock:['ez clap','on your knees now?','cant even fight back 💀','L + ratio']
+};
+
+/* ============================================================ Phase 5: NPC ARCHETYPES */
+// default trait ranges - used for any trait an archetype doesn't override, and for pure wildcards (null)
+const TRAIT_RANGE={aggression:[.15,1],friendliness:[.1,.9],bravery:[.2,.95],greed:[.2,.9],trust:[.2,.9],revenge:[.15,1],confidence:[.25,.9],social:[.1,1]};
+const ARCHETYPES=[
+  {id:'destroyer',label:'Reckless',icon:'💥',traits:{aggression:[.8,1],bravery:[.15,.4],revenge:[.55,1],confidence:[.65,1],friendliness:[.05,.3],trust:[.15,.4]}},
+  {id:'zen',label:'Chill',icon:'🧘',traits:{aggression:[.05,.3],bravery:[.5,.75],friendliness:[.45,.75],revenge:[.1,.3],social:[.25,.55]}},
+  {id:'builder',label:'Protective',icon:'🛡️',traits:{friendliness:[.75,1],aggression:[.3,.55],bravery:[.5,.75],social:[.55,.8],trust:[.55,.8]}},
+  {id:'peacemaker',label:'Peacemaker',icon:'🕊️',traits:{friendliness:[.8,1],aggression:[0,.15],bravery:[.3,.55],social:[.65,.9],revenge:[0,.2],trust:[.65,.9]}},
+  {id:'revenger',label:'Vengeful',icon:'👁️',traits:{revenge:[.75,1],aggression:[.5,.8],friendliness:[.15,.4],trust:[.1,.3]}},
+  {id:'gremlin',label:'Loot Gremlin',icon:'🤑',traits:{greed:[.8,1],aggression:[.25,.5],bravery:[.25,.5],friendliness:[.15,.4]}},
+  {id:'coward',label:'Coward',icon:'🏃',traits:{bravery:[0,.2],aggression:[.05,.25],confidence:[.1,.3]}},
+  {id:'social',label:'Social',icon:'🤝',traits:{social:[.8,1],friendliness:[.55,.8],aggression:[.15,.4],bravery:[.4,.65]}},
+  null // wildcard - fully random, keeps some NPCs unpredictable
+];
+function rollPersonality(archetype){
+  const p={};
+  for(const k in TRAIT_RANGE){
+    const r=(archetype&&archetype.traits&&archetype.traits[k])||TRAIT_RANGE[k];
+    p[k]=rnd(r[0],r[1]);
+  }
+  return p;
+}
+/* ============================================================ Phase 6: FACTION AFFINITY */
+// how archetypes instinctively feel about each other before any personal history forms
+const ARCHETYPE_AFFINITY={
+  destroyer:{peacemaker:-.25,builder:-.18,social:-.12,revenger:-.1,coward:.12},
+  peacemaker:{destroyer:-.25,revenger:-.15,gremlin:-.08},
+  builder:{destroyer:-.18,coward:.18,peacemaker:.12,social:.1},
+  revenger:{peacemaker:-.15,destroyer:-.1,zen:-.06},
+  gremlin:{peacemaker:-.08,builder:-.06},
+  coward:{destroyer:-.12,builder:.18},
+  zen:{revenger:-.06},
+  social:{destroyer:-.12,builder:.1,peacemaker:.1}
+};
+function archetypeAffinity(a,b){
+  if(!a||!a.archetype||!b||!b.archetype)return 0;
+  const t=ARCHETYPE_AFFINITY[a.archetype.id];
+  return (t&&t[b.archetype.id])||0;
+}
+
+/* ============================================================ Phase 2: FIGHTER LEVELS */
+// combat strength, completely independent from personality/archetype - a Novice can be Reckless,
+// an Elite can be Chill. "weight" controls how common each tier is in a freshly spawned arena.
+const NPC_LEVELS=[
+  {id:'novice', label:'Novice', skill:[.15,.32],speedMul:0.90,dmgMult:0.85,hpMult:0.88,weight:4},
+  {id:'casual', label:'Casual', skill:[.30,.48],speedMul:0.96,dmgMult:0.94,hpMult:0.96,weight:3},
+  {id:'skilled',label:'Skilled',skill:[.45,.65],speedMul:1.00,dmgMult:1.00,hpMult:1.00,weight:3},
+  {id:'veteran',label:'Veteran',skill:[.62,.80],speedMul:1.05,dmgMult:1.08,hpMult:1.08,weight:1},
+  {id:'elite',  label:'Elite',  skill:[.78,.95],speedMul:1.10,dmgMult:1.14,hpMult:1.15,weight:1}
+];
+function rollLevelSkill(level){return rnd(level.skill[0],level.skill[1]);}
+// builds an exact-size bag of levels distributed by weight (skewed toward stronger tiers in higher arenas)
+function buildLevelBag(n){
+  const bias=ARENA_I;
+  const weights=NPC_LEVELS.map((l,i)=>l.weight*(1+bias*0.35*(i/(NPC_LEVELS.length-1))));
+  const total=weights.reduce((s,w)=>s+w,0);
+  const bag=[];
+  NPC_LEVELS.forEach((l,i)=>{
+    const count=Math.max(1,Math.round(n*weights[i]/total));
+    for(let k=0;k<count;k++)bag.push(l);
+  });
+  while(bag.length<n)bag.push(pick(NPC_LEVELS));
+  while(bag.length>n)bag.splice(irnd(0,bag.length-1),1);
+  for(let i=bag.length-1;i>0;i--){const j=irnd(0,i);[bag[i],bag[j]]=[bag[j],bag[i]];}
+  return bag;
+}
+
+/* ============================================================ RENDERER / SCENE */
+const renderer=new THREE.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.05,300);
+camera.rotation.order='YXZ';
+const vmCam=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.01,10); // viewmodel cam
+const vmScene=new THREE.Scene();
+renderer.autoClear=false;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x6a6a6a,0.85));
+const sun=new THREE.DirectionalLight(0xffffff,0.75);sun.position.set(30,60,20);scene.add(sun);
+vmScene.add(new THREE.HemisphereLight(0xffffff,0x777777,1.1));
+const vmLight=new THREE.DirectionalLight(0xffffff,.7);vmLight.position.set(1,2,2);vmScene.add(vmLight);
+
+addEventListener('resize',()=>{
+  camera.aspect=vmCam.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();vmCam.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+/* ============================================================ WORLD */
+let DISPOSE=[];
+const world=new THREE.Group();scene.add(world);
+let COLL=[];           // colliders {x0,x1,y0,y1,z0,z1}
+let ARENA_I=0, ARENA=ARENAS[0], HALF=23;
+let SAFE={x0:0,x1:0,z0:0,z1:0,y:1};
+let PORTAL_NEXT=null,PORTAL_PREV=null,SHOP_POS=new THREE.Vector3();
+
+function box(w,h,d,texName,x,y,z,solid=true,rep=null){
+  const g=new THREE.BoxGeometry(w,h,d);
+  const t=rep?tiled(texName,rep[0],rep[1]):makeTex(texName);
+  const m=new THREE.MeshLambertMaterial({map:t});
+  DISPOSE.push(g,m);
+  const mesh=new THREE.Mesh(g,m);mesh.position.set(x,y,z);world.add(mesh);
+  if(solid)COLL.push({x0:x-w/2,x1:x+w/2,y0:y-h/2,y1:y+h/2,z0:z-d/2,z1:z+d/2});
+  return mesh;
+}
+function clearWorld(){
+  world.clear();
+  DISPOSE.forEach(d=>{try{d.dispose()}catch(e){}});DISPOSE=[];COLL=[];
+}
+function buildArena(i){
+  clearWorld();
+  ARENA_I=i;ARENA=ARENAS[i];HALF=ARENA.size/2;
+  scene.background=new THREE.Color(ARENA.sky);
+  scene.fog=new THREE.Fog(ARENA.sky,ARENA.fog[0],ARENA.fog[1]);
+  sun.intensity=i===4?0.45:0.75;
+
+  const S=ARENA.size;
+  // floor (visual only, y=0 plane is implicit ground)
+  const fg=new THREE.BoxGeometry(S,1,S);
+  const fm=new THREE.MeshLambertMaterial({map:tiled(ARENA.floor,S,S)});
+  DISPOSE.push(fg,fm);
+  const floor=new THREE.Mesh(fg,fm);floor.position.y=-0.5;world.add(floor);
+
+  // walls
+  const wh=7;
+  box(S,wh,1,ARENA.wall,0,wh/2,-HALF-0.5,true,[S,wh]);
+  box(S,wh,1,ARENA.wall,0,wh/2, HALF+0.5,true,[S,wh]);
+  box(1,wh,S,ARENA.wall,-HALF-0.5,wh/2,0,true,[S,wh]);
+  box(1,wh,S,ARENA.wall, HALF+0.5,wh/2,0,true,[S,wh]);
+
+  /* --- exposed shop + travel pads (no protected safe zone) --- */
+  const sx=-HALF+8,sz=-HALF+8;
+  SAFE={x0:1,x1:-1,z0:1,z1:-1,y:0};
+  const shop=box(1.6,1.6,1.6,'gold',sx,0.8,sz);
+  SHOP_POS.set(sx,0,sz);shop.userData.spin=true;
+  const mk=(col,x,z)=>{
+    const g=new THREE.BoxGeometry(3,0.2,3),m=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.75});
+    DISPOSE.push(g,m);const p=new THREE.Mesh(g,m);p.position.set(x,0.1,z);world.add(p);
+    for(const s of [-1.5,1.5]){box(0.4,3,0.4,'obsid',x+s,1.5,z-1.5);box(0.4,3,0.4,'obsid',x+s,1.5,z+1.5);}
+    return {mesh:p,x,z,t:0};
+  };
+  PORTAL_NEXT=mk(0x7ee36b,sx+6,sz-3);
+  PORTAL_PREV=mk(0xffd84b,sx+6,sz+3);
+
+  /* --- obstacles: fixed intentional layout, not random clutter --- */
+  buildObstacles();
+  // centre platform
+  box(9,1,9,ARENA.accent,0,0.5,0,true,[9,9]);
+  box(1,2,1,'glow',0,2,0,true);
+  for(const [ox,oz] of [[6,0],[-6,0],[0,6],[0,-6]])box(3,1,3,ARENA.accent,ox,0.35,oz,true,[3,3]);
+}
+function buildObstacles(){
+  // Phase 3: a handful of deliberate structures (pillars, platforms, walls, cover) instead of
+  // dozens of random blocks - keeps the arena readable while still giving fighters cover to use.
+  // Coordinates are fractions of the usable radius so the same layout scales to every arena size.
+  const R=HALF-10;
+  const layout=[
+    [ 0.75,-0.15,3,6,3,'pillar'], [ 0.15, 0.75,3,6,3,'pillar'],
+    [-0.75, 0.35,3,6,3,'pillar'], [-0.35,-0.75,3,6,3,'pillar'],
+    [ 0.45, 0.10,7,1.4,7,'platform'], [-0.15,-0.50,7,1.4,7,'platform'],
+    [ 0.30,-0.65,8,3,1,'wall'], [-0.55, 0.55,1,3,8,'wall'],
+    [ 0.55,-0.35,2,1.6,2,'cover'], [-0.30, 0.20,2,1.6,2,'cover'],
+    [ 0.05,-0.85,2,1.6,2,'cover'], [-0.75,-0.15,2,1.6,2,'cover'],
+    [ 0.85, 0.55,4,2.5,4,'side'], [-0.85,-0.55,4,2.5,4,'side']
+  ];
+  for(const [xf,zf,w,h,d,kind] of layout){
+    const x=xf*R,z=zf*R;
+    if(Math.abs(x)<7&&Math.abs(z)<7)continue;
+    const tex=kind==='platform'?ARENA.accent:kind==='pillar'?ARENA.wall:(Math.random()<.3?ARENA.accent:ARENA.floor==='grass'?'dirt':ARENA.floor);
+    box(w,h,d,tex,x,h/2,z,true,[Math.max(Math.round(w),1),Math.max(Math.round(h),1)]);
+  }
+}
+const inSafe=()=>false;
+const safeLocked=()=>false;
+const safeDecisionLocked=()=>false;
+function retreatSpot(f){
+  const threat=f.target&&!f.target.dead?f.target:null;
+  let dx=threat?f.pos.x-threat.pos.x:rnd(-1,1),dz=threat?f.pos.z-threat.pos.z:rnd(-1,1);
+  const len=Math.hypot(dx,dz)||1;dx/=len;dz/=len;
+  const p=new THREE.Vector3(clamp(f.pos.x+dx*rnd(16,25),-HALF+3,HALF-3),0,clamp(f.pos.z+dz*rnd(16,25),-HALF+3,HALF-3));
+  return hitsWorld(p)?arenaSpot():p;
+}
+function beginRetreat(f){
+  f.state='FLEE';f.timer=rnd(2.8,5.2);f.roamPt=retreatSpot(f);f.healCooldown=rnd(5,9);
+}
+function arenaSpot(minDist=0){
+  for(let i=0;i<60;i++){
+    const x=rnd(-HALF+3,HALF-3),z=rnd(-HALF+3,HALF-3);
+    if(Math.abs(x)<6&&Math.abs(z)<6)continue;
+    const p=new THREE.Vector3(x,6,z);
+    if(hitsWorld(p))continue;
+    // Phase 4: keep freshly-placed fighters spread out instead of clumping together
+    if(minDist>0){
+      let tooClose=false;
+      for(const f of fighters){
+        if(!f||f.dead)continue;
+        if(Math.hypot(x-f.pos.x,z-f.pos.z)<minDist){tooClose=true;break;}
+      }
+      if(tooClose)continue;
+    }
+    return p;
+  }
+  return new THREE.Vector3(HALF-5,6,HALF-5);
+}
+
+/* ============================================================ PHYSICS */
+const GRAV=30, EH=1.8, EW=0.3, JUMPV=9.2;
+function hitsWorld(p){
+  const x0=p.x-EW,x1=p.x+EW,y0=p.y+0.02,y1=p.y+EH-0.05,z0=p.z-EW,z1=p.z+EW;
+  for(let i=0;i<COLL.length;i++){const b=COLL[i];
+    if(x1>b.x0&&x0<b.x1&&y1>b.y0&&y0<b.y1&&z1>b.z0&&z0<b.z1)return true;}
+  return false;
+}
+function physics(e,dt){
+  e.vel.y-=GRAV*dt;
+  if(e.vel.y<-42)e.vel.y=-42;
+  const prevBottom=e.pos.y;
+  e.pos.y+=e.vel.y*dt;
+  e.onGround=false;
+  if(e.pos.y<0){e.pos.y=0;e.vel.y=0;e.onGround=true;}
+  const x0=e.pos.x-EW,x1=e.pos.x+EW,z0=e.pos.z-EW,z1=e.pos.z+EW;
+  for(const b of COLL){
+    if(x1<=b.x0||x0>=b.x1||z1<=b.z0||z0>=b.z1)continue;
+    if(e.pos.y+EH-0.05<=b.y0||e.pos.y+0.02>=b.y1)continue;
+    if(e.vel.y<=0&&prevBottom>=b.y1-0.06){e.pos.y=b.y1;e.vel.y=0;e.onGround=true;}
+    else if(e.vel.y>0){e.pos.y=b.y0-EH;e.vel.y=-0.1;}
+  }
+  // X
+  const ox=e.pos.x;e.pos.x+=e.vel.x*dt;
+  e.pos.x=clamp(e.pos.x,-HALF+0.45,HALF-0.45);
+  if(hitsWorld(e.pos)){e.pos.x=ox;e.blockedX=true;}else e.blockedX=false;
+  // Z
+  const oz=e.pos.z;e.pos.z+=e.vel.z*dt;
+  e.pos.z=clamp(e.pos.z,-HALF+0.45,HALF-0.45);
+  if(hitsWorld(e.pos)){e.pos.z=oz;e.blockedZ=true;}else e.blockedZ=false;
+}
+
+/* ============================================================ MODELS */
+function bodyMat(col){const m=new THREE.MeshLambertMaterial({color:col});return m;}
+function mkBox(w,h,d,mat,x,y,z,parent){
+  const g=new THREE.BoxGeometry(w,h,d);const m=new THREE.Mesh(g,mat);
+  m.position.set(x,y,z);parent.add(m);return m;
+}
+function buildWeaponMesh(type,mat,scale=1){
+  const g=new THREE.Group();
+  const head=bodyMat(mat.col), wood=bodyMat(0x6b4a2c);
+  if(type==='sword'){
+    mkBox(.09,.16,.09,wood,0,-.1,0,g);
+    mkBox(.34,.07,.09,head,0,0,0,g);
+    mkBox(.11,.78,.06,head,0,.44,0,g);
+    mkBox(.11,.1,.06,head,0,.86,0,g);
+  }else if(type==='axe'){
+    mkBox(.1,.95,.1,wood,0,.3,0,g);
+    mkBox(.36,.34,.12,head,.2,.72,0,g);
+    mkBox(.12,.5,.12,head,.02,.7,0,g);
+  }else if(type==='spear'){
+    mkBox(.08,1.85,.08,wood,0,.75,0,g);
+    mkBox(.13,.4,.13,head,0,1.8,0,g);
+    mkBox(.05,.16,.24,head,0,1.62,0,g);
+  }else{ // mace
+    mkBox(.11,.9,.11,wood,0,.25,0,g);
+    mkBox(.36,.36,.36,head,0,.82,0,g);
+    mkBox(.46,.14,.14,head,0,.82,0,g);
+    mkBox(.14,.14,.46,head,0,.82,0,g);
+  }
+  g.scale.setScalar(scale);
+  g.traverse(o=>{if(o.isMesh){DISPOSE.push(o.geometry)}});
+  return g;
+}
+function buildFighterModel(f){
+  const G=new THREE.Group();
+  const skin=bodyMat(f.skin), shirt=bodyMat(f.shirt), pants=bodyMat(f.pants);
+  const armorTint=ARMORS[f.armor].red>0?bodyMat(ARMORS[f.armor].col):null;
+  // head with face texture
+  const hg=new THREE.BoxGeometry(.52,.52,.52);
+  const faceT=makeTex('face');
+  const hm=[bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),
+            new THREE.MeshLambertMaterial({map:faceT}),bodyMat(f.skin)];
+  const head=new THREE.Mesh(hg,hm);head.position.y=1.53;G.add(head);
+  const torso=mkBox(.52,.62,.28,armorTint||shirt,0,1.05,0,G);
+  const armL=new THREE.Group();armL.position.set(-.38,1.32,0);G.add(armL);
+  mkBox(.22,.62,.22,armorTint||shirt,0,-.31,0,armL);
+  const armR=new THREE.Group();armR.position.set(.38,1.32,0);G.add(armR);
+  mkBox(.22,.62,.22,armorTint||shirt,0,-.31,0,armR);
+  const legL=new THREE.Group();legL.position.set(-.14,.74,0);G.add(legL);
+  mkBox(.24,.74,.24,pants,0,-.37,0,legL);
+  const legR=new THREE.Group();legR.position.set(.14,.74,0);G.add(legR);
+  mkBox(.24,.74,.24,pants,0,-.37,0,legR);
+  // weapon in right hand
+  const hand=new THREE.Group();hand.position.set(0,-.6,-.05);armR.add(hand);
+  G.traverse(o=>{if(o.isMesh){DISPOSE.push(o.geometry);if(Array.isArray(o.material))o.material.forEach(m=>DISPOSE.push(m));else DISPOSE.push(o.material);}});
+  return {G,head,torso,armL,armR,legL,legR,hand};
+}
+/* nametag */
+function makeTag(){
+  const c=document.createElement('canvas');c.width=256;c.height=96;
+  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.SpriteMaterial({map:t,transparent:true,depthTest:true});
+  const s=new THREE.Sprite(m);s.scale.set(2.4,0.9,1);s.position.y=2.35;
+  DISPOSE.push(t,m);
+  return {canvas:c,ctx:c.getContext('2d'),tex:t,sprite:s};
+}
+function drawTag(f){
+  const {ctx:x,canvas:c,tex}=f.tag;
+  x.clearRect(0,0,256,96);
+  x.font='bold 22px "Courier New",monospace';x.textAlign='center';
+  x.fillStyle='rgba(0,0,0,.45)';x.fillRect(20,4,216,26);
+  x.fillStyle=RANKS[f.rank].col;x.fillText(f.name,128,25);
+  // hp bar
+  x.fillStyle='#000';x.fillRect(48,34,160,10);
+  const p=clamp(f.hp/f.maxHp,0,1);
+  x.fillStyle=p>.5?'#4ce04c':p>.25?'#e0d24c':'#e04c4c';
+  x.fillRect(50,36,156*p,6);
+  x.font='bold 17px "Courier New",monospace';
+  if(f.msg&&f.msgT>0){x.fillStyle='rgba(0,0,0,.5)';x.fillRect(6,50,244,24);x.fillStyle='#fff';x.fillText(f.msg,128,68);}
+  else{x.fillStyle='rgba(220,220,220,.85)';x.fillText(f.weapon.mat.name+' '+f.weapon.type.name,128,68);}
+  tex.needsUpdate=true;
+}
+
+/* ============================================================ FIGHTER */
+let FID=1;
+class Fighter{
+  constructor(opts){
+    this.id=FID++;
+    this.isPlayer=!!opts.isPlayer;
+    this.name=opts.name||genName();
+    this.rank=opts.rank??0;
+    this.pos=opts.pos.clone();this.vel=new THREE.Vector3();
+    this.yaw=rnd(-Math.PI,Math.PI);this.pitch=0;this.aimYaw=this.yaw;
+    this.onGround=false;
+    this.baseHp=opts.maxHp||100;this.maxHp=this.baseHp;this.hp=this.maxHp;
+    this.kills=0;this.deaths=0;this.dead=false;this.respawnT=0;
+    this.atkCd=0;this.blocking=false;this.sprinting=false;
+    this.hurtT=0;this.coins=opts.coins||0;this.armor=opts.armor||0;
+    this.skin=pick([0xc69b6b,0x8d5524,0xffdbac,0xe0ac69,0xa9714b,0x6b4a2c]);
+    this.shirt=new THREE.Color().setHSL(Math.random(),rnd(.4,.9),rnd(.35,.6)).getHex();
+    this.pants=new THREE.Color().setHSL(Math.random(),rnd(.2,.7),rnd(.2,.45)).getHex();
+    this.weapon=opts.weapon||{type:TYPES[0],mat:MATS[0]};
+    this.owned=[this.weapon];
+    // Phase 2: fighter level (combat strength) is rolled separately from personality/archetype
+    this.level=opts.level||pick(NPC_LEVELS);
+    this.maxHp=this.baseHp*this.level.hpMult;this.hp=this.maxHp;
+    // AI personality (Phase 1: traits beyond raw skill; Phase 5: archetype-flavored)
+    this.skill=opts.skill??rollLevelSkill(this.level);
+    this.archetype=opts.archetype!==undefined?opts.archetype:pick(ARCHETYPES);
+    this.personality=rollPersonality(this.archetype);
+    this.personality.skill=this.skill;
+    // back-compat aliases (existing AI math reads these directly)
+    this.aggro=this.personality.aggression;
+    this.greed=this.personality.greed;
+    this.react=lerp(.42,.11,this.skill);
+    // Phase 1: mood drifts around personality baseline based on events
+    this.mood={
+      fear:(1-this.personality.bravery)*0.3,
+      anger:0,
+      confidence:this.personality.confidence,
+      excitement:0.1
+    };
+    // Phase 2: memory of other fighters, keyed by id, persists across own respawns
+    this.memory=new Map();
+    this.strafeDir=Math.random()<.5?-1:1;
+    this.state='ROAM';this.target=null;this.think=rnd(0,.4);
+    this.roamPt=arenaSpot();this.roamPt.y=0;
+    this.timer=0;this.reactT=0;this.strafeT=0;this.jumpT=0;this.msg='';this.msgT=0;
+    this.tauntT=0;this.crouch=0;this.shopT=0;this.campT=0;this.chatT=rnd(5,25);
+    this.anim=0;this.swing=0;
+    // Phase 3: crouch-as-language + ally system
+    this.crouchBurst=0;this.crouchBurstT=0;
+    this.allyOf=null;this.allyT=0;
+    this.watchTarget=null;this.watchT=0;
+    this.safeExit=null;this.safeExitBest=Infinity;this.safeExitStuckT=0;
+    this.healCommitted=false;this.healTarget=0;this.healHoldT=0;this.healCooldown=0;this.healSpot=null;
+    this.postSafeT=0;this.postSafeThreat=null;
+    this.idleT=0;this.lookT=0;this.lookTarget=null;this.crouchHoldT=0;this.crouchActionCooldown=0;this.crouchPropagate=false;
+    this.assessT=0;this.coverT=0;this.coverPt=null;this.coverCooldown=0;this.roamSprint=Math.random()<0.15;
+    this.lastCombat=-999;
+    if(!this.isPlayer)this.buildModel();
+  }
+  // Phase 3: tap crouch as a social signal (1=greet, 2=team up, 3+=celebrate)
+  crouchSignal(propagate=this.isPlayer){
+    if(this.dead)return;
+    this.crouchPropagate=this.crouchPropagate||propagate;
+    this.crouch=1;this.crouchHoldT=Math.max(this.crouchHoldT||0,0.35);
+    this.crouchBurst=(this.crouchBurst||0)+1;
+    this.crouchBurstT=0.6;
+    if(!this.isPlayer)drawTag(this);
+  }
+  buildModel(){
+    if(this.parts)world.remove(this.parts.G);
+    this.parts=buildFighterModel(this);
+    this.tag=makeTag();
+    this.parts.G.add(this.tag.sprite);
+    this.wmesh=buildWeaponMesh(this.weapon.type.id,this.weapon.mat,0.9);
+    this.parts.hand.add(this.wmesh);
+    world.add(this.parts.G);
+    drawTag(this);
+  }
+  refreshWeaponMesh(){
+    if(this.isPlayer){buildViewModel();return;}
+    if(this.wmesh)this.parts.hand.remove(this.wmesh);
+    this.wmesh=buildWeaponMesh(this.weapon.type.id,this.weapon.mat,0.9);
+    this.parts.hand.add(this.wmesh);
+    drawTag(this);
+  }
+  say(text){
+    this.msg=text;this.msgT=4;
+    if(!this.isPlayer)drawTag(this);
+    UI.chat(this.name,text,this.rank);
+  }
+  get eye(){return new THREE.Vector3(this.pos.x,this.pos.y+1.62,this.pos.z);}
+  get dmg(){return this.weapon.type.dmg*this.weapon.mat.mult*(this.level?this.level.dmgMult:1);}
+  get reach(){return this.weapon.type.reach;}
+  get cooldown(){return this.weapon.type.cd*this.weapon.mat.cd;}
+  forward(){return new THREE.Vector3(-Math.sin(this.yaw),0,-Math.cos(this.yaw));}
+
+  attack(){
+    if(this.atkCd>0||this.dead||safeDecisionLocked(this))return false;
+    this.atkCd=this.cooldown;
+    this.swing=1;
+    S.swing();
+    const crit=(!this.onGround&&this.vel.y<-0.6);
+    const fwd=this.forward();
+    let best=null,bestD=1e9;
+    for(const t of fighters){
+      if(t===this||t.dead)continue;
+      if(inSafe(t.pos)||inSafe(this.pos)||safeLocked(t))continue;
+      const dx=t.pos.x-this.pos.x,dz=t.pos.z-this.pos.z;
+      const d=Math.hypot(dx,dz);
+      if(d>this.reach+0.35)continue;
+      if(t.pos.y>this.pos.y+2.1||t.pos.y+EH<this.pos.y-0.6)continue;
+      const dot=(dx/d)*fwd.x+(dz/d)*fwd.z;
+      if(dot<0.55)continue;
+      if(d<bestD){bestD=d;best=t;}
+    }
+    if(best){
+      let dmg=this.dmg*(crit?1.5:1);
+      const kbBoost=this.sprinting?1.45:1;
+      best.takeHit(dmg,this,crit,kbBoost);
+      return true;
+    }
+    return false;
+  }
+  takeHit(dmg,from,crit,kbBoost){
+    if(this.dead||inSafe(this.pos)||safeLocked(this))return;
+    this.lastCombat=now();if(from)from.lastCombat=now();
+    if(this.blocking)dmg*=0.42;
+    dmg*=(1-ARMORS[this.armor].red);
+    this.hp-=dmg;
+    this.hurtT=0.25;
+    if(!this.isPlayer)drawTag(this);
+    // knockback
+    const dx=this.pos.x-from.pos.x,dz=this.pos.z-from.pos.z;
+    const d=Math.hypot(dx,dz)||1;
+    const k=from.weapon.type.kb*kbBoost*(this.blocking?.5:1);
+    this.vel.x+=(dx/d)*6.0*k;this.vel.z+=(dz/d)*6.0*k;
+    this.vel.y=Math.max(this.vel.y,4.4*Math.min(k,1.5));
+    this.onGround=false;
+    particles(this.pos.clone().add(new THREE.Vector3(0,1.1,0)),crit?0xffffff:0xc0303a,crit?14:8);
+    if(from.isPlayer){
+      UI.hitmark();S[crit?'crit':'hit']();
+      UI.popup(this.pos.clone().add(new THREE.Vector3(0,1.9,0)),(crit?'✧':'')+Math.round(dmg),crit?'#fff36b':'#ff8b8b');
+    }
+    if(this.isPlayer){UI.hurt();S.hurt();}
+    // Phase 2: remember who hit us, Phase 1: mood reacts to being attacked
+    if(!this.isPlayer&&from&&from!==this){
+      const m=getMemory(this,from);
+      m.trust=clamp(m.trust-(0.08+this.mood.anger*0.06),0,1);
+      m.revenge=clamp(m.revenge+0.10*this.personality.revenge,0,1);
+      m.timesFought++;m.lastSeen=now();
+      this.mood.anger=clamp(this.mood.anger+0.22,0,1);
+      this.mood.fear=clamp(this.mood.fear+0.05,0,1);
+    }
+    // Phase 6: nearby friends of the victim grow cold toward the attacker
+    if(from&&from!==this)notifyWitnesses(this,from,0.45);
+    // aggro flip: personalities still control whether a hit triggers immediate retaliation
+    if(!this.isPlayer&&this.state!=='FLEE'){
+      const retaliate=0.35+this.personality.aggression*0.35+this.mood.anger*0.25;
+      if(Math.random()<clamp(retaliate,0,0.95)){this.target=from;this.state='FIGHT';this.reactT=this.react*.6;}
+    }
+    // Phase 3: allies rally to defend their friend when they're attacked
+    if(from&&from!==this){
+      for(const helper of fighters){
+        if(helper===this||helper===from||helper.dead||helper.isPlayer)continue;
+        if(helper.allyOf===this.id&&helper.allyT>0&&helper.state!=='FIGHT'&&helper.state!=='FLEE'&&!safeDecisionLocked(helper)){
+          const d=helper.pos.distanceTo(this.pos);
+          if(d<26&&Math.random()<0.5+helper.personality.friendliness*0.3){
+            helper.target=from;helper.state=d<helper.reach+3.2?'FIGHT':'HUNT';helper.reactT=helper.react*0.5;
+            if(Math.random()<0.5)helper.say(pick(CHAT.taunt));
+          }
+        }
+      }
+    }
+    if(this.hp<=0)this.die(from);
+  }
+  die(by){
+    if(this.dead)return;
+    this.dead=true;this.deaths++;
+    this.hp=0;
+    particles(this.pos.clone().add(new THREE.Vector3(0,1,0)),this.shirt,26,true);
+    if(this.parts)this.parts.G.visible=false;
+    UI.kill(by,this);
+    if(by&&by!==this){
+      by.kills++;
+      if(by.isPlayer){
+        const r=ARENA.reward;
+        const xp=Math.round((18+this.rank*14)*r), co=Math.round((14+this.rank*10)*r*rnd(.8,1.3));
+        player.xp+=xp;player.coins+=co;
+        UI.toast('+'+xp+' XP   +'+co+' ⛃');
+        checkRank();UI.stats();
+      }else{
+        by.coins+=Math.round((16+this.rank*10)*ARENA.reward*rnd(.8,1.3));
+        if(Math.random()<.55)by.say(pick(CHAT.kill));
+        if(Math.random()<.35){by.state='TAUNT';by.tauntT=rnd(1.2,2.6);by.roamPt=this.pos.clone();}
+      }
+      // Phase 2: getting killed leaves a lasting grudge against the killer
+      if(!this.isPlayer){
+        const m=getMemory(this,by);
+        m.revenge=clamp(m.revenge+0.30*this.personality.revenge+0.12,0,1);
+        m.trust=clamp(m.trust-0.3,0,1);
+        m.timesKilledMe++;m.lastSeen=now();
+      }
+      this.mood.anger=clamp(this.mood.anger+0.35,0,1);
+      this.mood.fear=clamp(this.mood.fear+0.15,0,1);
+      this.mood.confidence=clamp(this.mood.confidence-0.15,0,1);
+      // Phase 2: onlookers who hold a grudge against the dead fighter might celebrate
+      for(const other of fighters){
+        if(other===this||other===by||other.dead||other.isPlayer)continue;
+        const om=other.memory.get(this.id);
+        if(om&&om.revenge>0.5&&Math.random()<0.12)other.say(pick(CHAT.celebrate));
+      }
+      // Phase 6: friends of the victim turn cold on the killer; co-fighters bond closer with the killer
+      notifyWitnesses(this,by,1);
+      for(const helper of fighters){
+        if(helper===this||helper===by||helper.dead||helper.isPlayer)continue;
+        if(helper.target===this){
+          const mb=getMemory(helper,by);
+          mb.trust=clamp(mb.trust+0.15,0,1);
+          if(!by.isPlayer){const mby=getMemory(by,helper);mby.trust=clamp(mby.trust+0.15,0,1);}
+          helper.allyOf=by.id;helper.allyT=Math.max(helper.allyT,rnd(45,90));
+        }
+      }
+      // Phase 7: the kill ripples outward - friends grieve, the killer's friends get hyped, bystanders grow uneasy
+      moodCascadeOnDeath(this,by);
+      moodCascadeOnKill(by,this);
+    }
+    if(this.isPlayer){
+      S.die();
+      player.coins=Math.round(player.coins*0.9);
+      UI.showDead(by?by.name:'the void');
+    }else{
+      if(Math.random()<.5)this.say(pick(CHAT.death));
+      this.respawnT=rnd(2.6,6.0);
+    }
+  }
+  respawn(){
+    this.dead=false;this.hp=this.maxHp;
+    this.pos.copy(arenaSpot());this.vel.set(0,0,0);
+    this.state='ROAM';this.target=null;this.roamPt=arenaSpot();
+    this.lastCombat=-999;
+    this.healCommitted=false;this.healTarget=0;this.healHoldT=0;this.healCooldown=0;this.healSpot=null;
+    this.safeExit=null;this.safeExitBest=Infinity;this.safeExitStuckT=0;this.postSafeT=0;this.postSafeThreat=null;
+    if(this.parts){this.parts.G.visible=true;drawTag(this);}
+    // sometimes "a new player joins" instead - fresh identity, clean slate, new archetype
+    if(!this.isPlayer&&Math.random()<0.18){
+      this.name=genName();
+      this.level=pick(NPC_LEVELS);this.skill=rollLevelSkill(this.level);
+      this.maxHp=this.baseHp*this.level.hpMult;this.hp=this.maxHp;
+      this.archetype=pick(ARCHETYPES);
+      this.personality=rollPersonality(this.archetype);
+      this.personality.skill=this.skill;
+      this.aggro=this.personality.aggression;this.greed=this.personality.greed;
+      this.react=lerp(.42,.11,this.skill);
+      this.mood={fear:(1-this.personality.bravery)*0.3,anger:0,confidence:this.personality.confidence,excitement:0.1};
+      this.memory=new Map();
+      this.allyOf=null;this.allyT=0;
+      UI.feed(`§7${this.name} joined the arena${this.archetype?' '+this.archetype.icon:''}`);
+      drawTag(this);
+    }
+  }
+  /* ---------- movement helper used by AI + player ---------- */
+  applyMove(wishX,wishZ,dt,speedMul=1){
+    let sp=(this.sprinting?5.75:4.35)*speedMul*(this.level?this.level.speedMul:1);
+    if(this.blocking)sp*=0.42;
+    const len=Math.hypot(wishX,wishZ);
+    if(len>0.001){
+      wishX/=len;wishZ/=len;
+      const accel=this.onGround?42:9;
+      this.vel.x+=wishX*sp*accel*dt;
+      this.vel.z+=wishZ*sp*accel*dt;
+      const h=Math.hypot(this.vel.x,this.vel.z);
+      const cap=sp*(this.onGround?1:1.28);
+      if(h>cap){this.vel.x*=cap/h;this.vel.z*=cap/h;}
+    }
+    if(this.onGround){
+      const f=Math.pow(0.0022,dt);
+      this.vel.x*=f;this.vel.z*=f;
+    }else{
+      const f=Math.pow(0.55,dt);
+      this.vel.x*=f;this.vel.z*=f;
+    }
+    this.anim+=Math.hypot(this.vel.x,this.vel.z)*dt*2.1;
+  }
+  jump(){if(this.onGround){this.vel.y=JUMPV;this.onGround=false;}}
+
+  updateVisual(dt){
+    if(!this.parts||this.dead)return;
+    const P=this.parts;
+    P.G.position.set(this.pos.x,this.pos.y,this.pos.z);
+    P.G.rotation.y=this.yaw;
+    const sway=Math.sin(this.anim*2)*0.75;
+    const sp=Math.min(Math.hypot(this.vel.x,this.vel.z)/5,1.3);
+    P.legL.rotation.x=sway*sp;P.legR.rotation.x=-sway*sp;
+    P.armL.rotation.x=-sway*sp*0.7;
+    P.head.rotation.x=clamp(this.pitch,-.6,.6);
+    // swing anim
+    if(this.swing>0){this.swing=Math.max(0,this.swing-dt*4.2);}
+    const sw=Math.sin(this.swing*Math.PI);
+    P.armR.rotation.x=-sway*sp*0.7-sw*2.1;
+    P.armR.rotation.z=sw*0.5;
+    if(this.blocking){P.armR.rotation.x=-1.35;P.armL.rotation.x=-1.1;}
+    // crouch spam / taunt
+    const c=this.crouch;
+    P.G.scale.y=1-c*0.22;
+    // hurt flash
+    const flash=this.hurtT>0;
+    P.torso.material.color.setHex(flash?0xff5555:(ARMORS[this.armor].red>0?ARMORS[this.armor].col:this.shirt));
+    if(this.msgT>0){this.msgT-=dt;if(this.msgT<=0)drawTag(this);}
+    if(this.hurtT>0){this.hurtT-=dt;if(this.hurtT<=0)drawTag(this);}
+    // tag faces camera automatically (sprite)
+  }
+}
+
+/* ============================================================ PARTICLES */
+const pPool=[];
+function particles(pos,color,n,big=false){
+  for(let i=0;i<n;i++){
+    let p=pPool.find(q=>!q.alive);
+    if(!p){
+      if(pPool.length>150)return;
+      const g=new THREE.BoxGeometry(1,1,1),m=new THREE.MeshBasicMaterial();
+      p={mesh:new THREE.Mesh(g,m),vel:new THREE.Vector3(),life:0,alive:false};
+      scene.add(p.mesh);pPool.push(p);
+    }
+    p.alive=true;p.life=rnd(.3,.8);
+    const s=big?rnd(.09,.19):rnd(.05,.13);
+    p.mesh.scale.setScalar(s);p.mesh.visible=true;
+    p.mesh.material.color.setHex(color);
+    p.mesh.position.copy(pos);
+    p.vel.set(rnd(-3,3),rnd(1,6),rnd(-3,3));
+  }
+}
+function updateParticles(dt){
+  for(const p of pPool){
+    if(!p.alive)continue;
+    p.life-=dt;
+    if(p.life<=0){p.alive=false;p.mesh.visible=false;continue;}
+    p.vel.y-=22*dt;
+    p.mesh.position.addScaledVector(p.vel,dt);
+    if(p.mesh.position.y<0.05){p.mesh.position.y=0.05;p.vel.y*=-0.3;p.vel.x*=.7;p.vel.z*=.7;}
+    p.mesh.rotation.x+=dt*6;p.mesh.rotation.y+=dt*5;
+  }
+}
+
+/* ============================================================ AI  (human-feeling) */
+/* ---- Phase 2: memory & relationships ---- */
+function getMemory(f,target){
+  let m=f.memory.get(target.id);
+  if(!m){
+    // Phase 6: first impressions are colored by faction affinity between archetypes
+    const aff=archetypeAffinity(f,target);
+    m={trust:clamp(0.3+f.personality.trust*0.4+aff*0.5,0,1),revenge:0,timesFought:0,timesIKilled:0,timesKilledMe:0,lastSeen:now()};
+    f.memory.set(target.id,m);
+  }
+  return m;
+}
+// strongest grudge this fighter is currently holding against someone alive & reachable
+function findGrudge(f){
+  let best=null,bestRev=0.001;
+  for(const [id,m] of f.memory){
+    if(m.revenge<=bestRev)continue;
+    const t=fighters.find(x=>x.id===id);
+    if(t&&!t.dead&&!inSafe(t.pos)&&!safeDecisionLocked(t)){bestRev=m.revenge;best=t;}
+  }
+  return best;
+}
+/* ---- Phase 3: crouch language, fight-watching, ally rallying ---- */
+function socialCrouch(f,source){
+  f.state='IDLE';f.idleT=rnd(.65,1.25);f.lookTarget=source;f.target=null;f.sprinting=false;
+  f.vel.x*=0.25;f.vel.z*=0.25;f.crouchActionCooldown=rnd(2.5,5);f.crouchSignal();
+}
+function broadcastCrouch(f,taps){
+  if(safeDecisionLocked(f))return;
+  // Phase 8: crouch bursts form a small emote language - meaning depends on tap count + context
+  const kind=taps>=5?'mock':taps===4?'respect':taps===3?'celebrate':taps===2?'team':(f.state==='FLEE'||f.state==='PEACE')?'peace':'greet';
+  if(f.isPlayer){
+    const msgs={
+      greet:'§7You crouch — friendly greeting',
+      peace:'§7You crouch while backing away — offering peace',
+      team:'§7You crouch twice — proposing to team up',
+      celebrate:'§7You crouch repeatedly — celebrating',
+      respect:'§7You crouch 4x — showing respect (gg)',
+      mock:'§7You spam crouch — taunting/mocking'
+    };
+    UI.feed(msgs[kind]);
+  }else{
+    if(kind==='mock'&&Math.random()<0.5)f.say(pick(CHAT.mock));
+    else if(kind==='respect'&&Math.random()<0.4)f.say(pick(CHAT.respect));
+  }
+  for(const o of fighters){
+    if(o===f||o.dead||o.isPlayer||safeDecisionLocked(o))continue;
+    if(f.pos.distanceTo(o.pos)>9)continue;
+    const m=getMemory(o,f);
+    if(kind==='greet'){
+      m.trust=clamp(m.trust+0.06,0,1);
+      if(o.crouchBurstT<=0&&o.state!=='FIGHT'&&o.state!=='FLEE'&&Math.random()<0.35+o.personality.friendliness*0.4)socialCrouch(o,f);
+    }else if(kind==='peace'){
+      m.trust=clamp(m.trust+0.12,0,1);
+      if(o.target===f&&(o.state==='HUNT'||o.state==='FIGHT')){
+        const standDown=0.15+o.personality.friendliness*0.4-o.personality.aggression*0.2;
+        if(Math.random()<clamp(standDown,0.05,0.75)){
+          o.state='ROAM';o.target=null;o.roamPt=arenaSpot();
+          if(o.crouchBurstT<=0)socialCrouch(o,f);
+        }
+      }
+    }else if(kind==='team'){
+      m.trust=clamp(m.trust+0.1,0,1);
+      const wantAlly=o.personality.friendliness*0.6+m.trust*0.4;
+      if(wantAlly>0.55&&o.state!=='FIGHT'&&o.state!=='FLEE'){
+        o.allyOf=f.id;o.allyT=rnd(30,60);
+        if(o.crouchBurstT<=0)socialCrouch(o,f);
+        if(Math.random()<0.4)o.say(pick(CHAT.idle));
+      }
+    }else if(kind==='respect'){
+      m.trust=clamp(m.trust+0.15,0,1);
+      m.revenge=clamp(m.revenge-0.15,0,1);
+      if(o.crouchBurstT<=0&&Math.random()<0.5)socialCrouch(o,f);
+    }else if(kind==='mock'){
+      m.trust=clamp(m.trust-0.15,0,1);
+      const offended=o.personality.confidence*0.5+o.personality.aggression*0.5;
+      if(offended>0.5&&Math.random()<offended*0.6&&o.state!=='FIGHT'&&o.state!=='FLEE'&&!safeDecisionLocked(o)&&!safeDecisionLocked(f)&&!inSafe(o.pos)&&!inSafe(f.pos)){
+        m.revenge=clamp(m.revenge+0.25,0,1);
+        o.target=f;o.state=f.pos.distanceTo(o.pos)<o.reach+3.2?'FIGHT':'HUNT';o.reactT=o.react*0.5;
+        if(Math.random()<0.6)o.say(pick(CHAT.taunt));
+      }
+    }else{
+      m.trust=clamp(m.trust+0.03,0,1);
+      if(o.crouchBurstT<=0&&Math.random()<0.3+o.personality.social*0.3)socialCrouch(o,f);
+    }
+  }
+}
+function resolveCrouchSignals(dt){
+  for(const f of fighters){
+    if(f.crouchBurstT>0){
+      f.crouchBurstT-=dt;
+      if(f.crouchBurstT<=0){
+        const n=f.crouchBurst,propagate=f.crouchPropagate;f.crouchBurst=0;f.crouchPropagate=false;
+        if(propagate)broadcastCrouch(f,n);
+      }
+    }
+  }
+}
+// is anyone (other than f) currently mid-fight nearby? returns the attacker fighter
+function nearbyFight(f,range=22){
+  for(const a of fighters){
+    if(a===f||a.dead||safeDecisionLocked(a)||a.state!=='FIGHT'||!a.target||a.target.dead||safeDecisionLocked(a.target))continue;
+    if(f.pos.distanceTo(a.pos)<range)return a;
+  }
+  return null;
+}
+/* ---- Phase 6: relationship chains - friends of a victim turn cold on the attacker ---- */
+function notifyWitnesses(victim,attacker,severity=1){
+  if(!attacker||attacker===victim)return;
+  for(const w of fighters){
+    if(w===victim||w===attacker||w.dead||w.isPlayer)continue;
+    if(w.pos.distanceTo(victim.pos)>20)continue;
+    const wv=w.memory.get(victim.id);
+    if(!wv||wv.trust<0.6)continue; // only friends of the victim care
+    const wa=getMemory(w,attacker);
+    const loyalty=wa.trust>0.6?0.3:1; // dampened if w already likes the attacker too
+    const hit=(0.06+w.personality.friendliness*0.14)*severity*loyalty;
+    wa.trust=clamp(wa.trust-hit,0,1);
+    wa.revenge=clamp(wa.revenge+hit*(0.5+w.personality.revenge*0.6),0,1);
+  }
+}
+/* ---- Phase 7: mood cascades - emotions ripple through nearby fighters ---- */
+function moodCascadeOnDeath(victim,by){
+  for(const w of fighters){
+    if(w===victim||w.dead||w.isPlayer)continue;
+    const d=w.pos.distanceTo(victim.pos);
+    if(d>22)continue;
+    const wv=w.memory.get(victim.id);
+    if(wv&&wv.trust>0.6){
+      w.mood.anger=clamp(w.mood.anger+0.35,0,1);
+      w.mood.fear=clamp(w.mood.fear+0.2,0,1);
+      w.mood.confidence=clamp(w.mood.confidence-0.1,0,1);
+    }else if(d<12){
+      w.mood.fear=clamp(w.mood.fear+0.06*(1-w.personality.bravery),0,1);
+    }
+  }
+}
+function moodCascadeOnKill(by,victim){
+  if(!by)return;
+  for(const w of fighters){
+    if(w===by||w.dead||w.isPlayer)continue;
+    if(w.pos.distanceTo(by.pos)>18)continue;
+    const wb=w.memory.get(by.id);
+    if(wb&&wb.trust>0.6){
+      w.mood.confidence=clamp(w.mood.confidence+0.15,0,1);
+      w.mood.excitement=clamp(w.mood.excitement+0.2,0,1);
+    }
+  }
+}
+// fighters actively fleeing spread fear to nearby low-bravery bystanders
+function cascadeFear(f,dt){
+  if(f.state!=='FLEE')return;
+  for(const o of fighters){
+    if(o===f||o.dead||o.isPlayer||safeDecisionLocked(o)||o.state==='FLEE'||o.state==='FIGHT')continue;
+    if(f.pos.distanceTo(o.pos)>10)continue;
+    const susceptibility=(1-o.personality.bravery)*0.5+0.05;
+    o.mood.fear=clamp(o.mood.fear+susceptibility*dt*0.6,0,1);
+  }
+}
+/* ---- Phase 1: mood drifts around personality baseline each tick ---- */
+function updateMood(f,dt){
+  const p=f.personality;
+  f.mood.fear=lerp(f.mood.fear,(1-p.bravery)*0.3,1-Math.exp(-dt*0.5));
+  f.mood.anger=lerp(f.mood.anger,0,1-Math.exp(-dt*0.35));
+  f.mood.confidence=lerp(f.mood.confidence,p.confidence,1-Math.exp(-dt*0.4));
+  const wantExcite=(f.state==='FIGHT'||f.state==='HUNT')?0.6:0.1;
+  f.mood.excitement=lerp(f.mood.excitement,wantExcite,1-Math.exp(-dt*0.6));
+}
+function nearestEnemy(f,maxD=1e9){
+  let best=null,score=1e9;
+  for(const t of fighters){
+    if(t===f||t.dead||inSafe(t.pos)||safeDecisionLocked(t))continue;
+    const d=f.pos.distanceTo(t.pos);
+    if(d>maxD)continue;
+    // humans third-party low-hp targets & prefer close ones
+    let s=d*(0.55+t.hp/t.maxHp*0.9);
+    if(t.isPlayer)s*=lerp(1.25,0.75,f.aggro);
+    const mem=f.memory.get(t.id);
+    if(mem){
+      if(mem.revenge>0.15)s*=lerp(1,0.4,mem.revenge); // grudges pull attention
+      else if(mem.trust>0.75)s*=1.25;                 // less eager to fight friends
+    }
+    // Phase 6: rival factions are juicier targets, allied factions less appealing
+    const aff=archetypeAffinity(f,t);
+    if(aff<-0.05)s*=lerp(1,0.75,clamp(-aff,0,1));
+    else if(aff>0.05)s*=lerp(1,1.3,clamp(aff,0,1));
+    if(s<score){score=s;best=t;}
+  }
+  return best;
+}
+function upgradeCost(f){
+  // best affordable upgrade path
+  let best=null;
+  for(const ty of TYPES)for(const mt of MATS){
+    if(mt.rank>f.rank)continue;
+    const cost=Math.round(ty.cost*mt.cost);
+    const power=ty.dmg*mt.mult/ (ty.cd*mt.cd) + ty.reach*0.7;
+    const cur=f.weapon.type.dmg*f.weapon.mat.mult/(f.weapon.type.cd*f.weapon.mat.cd)+f.weapon.type.reach*0.7;
+    if(power>cur*1.06&&(!best||cost<best.cost))best={type:ty,mat:mt,cost};
+  }
+  return best;
+}
+// Phase 4: how many hostiles are nearby right now (being outnumbered matters)
+function nearbyThreatCount(f,range=16){
+  let n=0;
+  for(const t of fighters){
+    if(t===f||t.dead||inSafe(t.pos)||safeDecisionLocked(t))continue;
+    if(f.pos.distanceTo(t.pos)<range)n++;
+  }
+  return n;
+}
+function findCoverPoint(f,threat){
+  if(!threat)return null;
+  let best=null,bestScore=Infinity;
+  for(const b of COLL){
+    const w=b.x1-b.x0,d=b.z1-b.z0;
+    if(w>20||d>20)continue;
+    const cx=(b.x0+b.x1)/2,cz=(b.z0+b.z1)/2;
+    if(cx>SAFE.x0-2&&cx<SAFE.x1+2&&cz>SAFE.z0-2&&cz<SAFE.z1+2)continue;
+    const fd=Math.hypot(cx-f.pos.x,cz-f.pos.z);
+    if(fd>18)continue;
+    let dx=cx-threat.pos.x,dz=cz-threat.pos.z,len=Math.hypot(dx,dz)||1;
+    dx/=len;dz/=len;
+    const pad=Math.max(w,d)/2+1.2;
+    const p=new THREE.Vector3(clamp(cx+dx*pad,-HALF+2,HALF-2),0,clamp(cz+dz*pad,-HALF+2,HALF-2));
+    if(inSafe(p)||hitsWorld(p))continue;
+    const score=fd+threat.pos.distanceTo(p)*0.08;
+    if(score<bestScore){bestScore=score;best=p;}
+  }
+  return best;
+}
+function aiThink(f){
+  f.think=(f.state==='FIGHT'||f.state==='HUNT')?rnd(.18,.42):rnd(.5,1.25);
+  const hpFrac=f.hp/f.maxHp;
+
+  if(f.state==='IDLE'||f.state==='ASSESS'||f.state==='COVER'||f.state==='WATCH'||f.state==='PEACE')return;
+
+  if(f.state==='SHOP'||f.state==='TAUNT')return;
+
+  // flee decision (skill + bravery threshold, current fear mood + being outnumbered tips it further)
+  const threat=nearbyThreatCount(f,16);
+  const fleeAt=lerp(0.36,0.16,f.skill*0.55+f.personality.bravery*0.45)*(1+f.mood.fear*0.5)*(f.aggro<0.4?1.15:1)*(threat>1?1+(threat-1)*0.18:1);
+  if(hpFrac<fleeAt&&f.state!=='FLEE'&&f.healCooldown<=0){
+    beginRetreat(f);
+    if(Math.random()<.5)f.say(pick(CHAT.low));
+    return;
+  }
+  // Phase 7: contagious panic - fear picked up from fleeing neighbors can trigger a flee on its own
+  if(f.state!=='FLEE'&&f.state!=='FIGHT'&&f.healCooldown<=0&&f.mood.fear>0.72&&f.personality.bravery<0.5&&Math.random()<0.35){
+    beginRetreat(f);
+    if(Math.random()<.5)f.say(pick(CHAT.low));
+    return;
+  }
+  if(f.state==='FLEE')return;
+
+  // Tactical fighters sometimes disengage briefly to nearby cover instead of blindly trading hits.
+  if(f.state==='FIGHT'&&f.target&&f.hp/f.maxHp<0.6&&f.skill>0.52&&f.personality.confidence>0.48&&f.coverCooldown<=0){
+    const cover=findCoverPoint(f,f.target);
+    if(cover&&Math.random()<0.3){f.coverPt=cover;f.coverT=rnd(2,4);f.coverCooldown=rnd(7,12);f.state='COVER';return;}
+  }
+
+  // Phase 2: grudges override normal targeting - revenge-driven fighters hunt across the map
+  const grudge=findGrudge(f);
+  if(grudge&&f.personality.revenge>0.3){
+    const gd=f.pos.distanceTo(grudge.pos);
+    if(gd<55){
+      if(f.target!==grudge&&Math.random()<0.7)f.say(pick(CHAT.revenge));
+      f.target=grudge;
+      f.state=gd<f.reach+3.2?'FIGHT':'HUNT';
+      f.reactT=f.react*.7;
+      return;
+    }
+  }
+
+  // Phase 3: notice fights happening nearby and react like a real bystander would
+  if(f.state==='ROAM'){
+    const brawler=nearbyFight(f);
+    if(brawler){
+      const foe=brawler.target;
+      // Phase 6: faction affinity colors first impressions even before any direct history
+      const memBrawler=getMemory(f,brawler);
+      const memFoe=getMemory(f,foe);
+      const likesBrawler=(memBrawler&&memBrawler.trust>0.65)||f.allyOf===brawler.id;
+      const likesFoe=(memFoe&&memFoe.trust>0.65)||f.allyOf===foe.id;
+      const hatesBrawler=memBrawler&&memBrawler.revenge>0.4;
+      const hatesFoe=memFoe&&memFoe.revenge>0.4;
+      // Phase 4: peacemakers (high friendliness, near-zero aggression) try to break up fights they have no stake in
+      if(f.personality.friendliness>0.82&&f.personality.aggression<0.16&&!hatesBrawler&&!hatesFoe&&Math.random()<0.12){
+        f.state='PEACE';f.watchTarget=brawler;f.watchT=rnd(4,8);
+        return;
+      }
+      let joinTarget=null;
+      if(hatesFoe||likesBrawler)joinTarget=foe;
+      else if(hatesBrawler||likesFoe)joinTarget=brawler;
+      if(joinTarget&&f.personality.friendliness+f.personality.aggression>0.82&&Math.random()<0.62){
+        f.target=joinTarget;f.state=f.pos.distanceTo(joinTarget.pos)<f.reach+3.2?'FIGHT':'HUNT';f.reactT=f.react*.7;
+        return;
+      }
+      // loot gremlin: greedy fighters swoop in to steal a near-death kill
+      if(f.personality.greed>0.65){
+        const weakSide=brawler.hp<foe.hp?brawler:foe;
+        if(weakSide.hp/weakSide.maxHp<0.35&&Math.random()<f.personality.greed*0.7){
+          f.target=weakSide;f.state=f.pos.distanceTo(weakSide.pos)<f.reach+3.2?'FIGHT':'HUNT';f.reactT=f.react*.5;
+          return;
+        }
+      }
+      // cowardly fighters steer clear of trouble
+      if(f.personality.bravery<0.35&&Math.random()<0.15){
+        f.roamPt=arenaSpot();
+        return;
+      }
+      // social fighters like to gather and watch
+      if(f.personality.social>0.72&&Math.random()<0.025){
+        f.state='WATCH';f.watchTarget=brawler;f.watchT=rnd(3,7);
+        return;
+      }
+    }
+  }
+
+  // Calm/social NPCs regularly pause instead of constantly seeking another action.
+  if(f.state==='ROAM'&&Math.random()<0.04+(1-f.personality.aggression)*0.08){
+    f.state='IDLE';f.idleT=rnd(.7,2.4)*(1.1-f.personality.aggression*0.25);
+    f.lookTarget=nearestEnemy(f,16);f.target=null;return;
+  }
+
+  const t=nearestEnemy(f,46);
+  if(!t){f.state='IDLE';f.idleT=rnd(.7,2.2);f.lookTarget=null;f.target=null;return;}
+  const d=f.pos.distanceTo(t.pos);
+  const mem=f.memory.get(t.id);
+  const hostile=!!(mem&&mem.revenge>0.35);
+  const willingness=clamp(.24+f.personality.aggression*0.56+f.mood.anger*0.2+f.personality.confidence*0.12+(1-t.hp/t.maxHp)*f.personality.greed*0.15-(mem&&mem.trust>0.65?0.38:0),0,1);
+  if(f.target!==t){f.target=t;f.reactT=f.react*rnd(.8,1.6);}
+  if(d<f.reach+4.5){
+    f.state='ASSESS';f.assessT=hostile?rnd(.15,.45):rnd(.45,1.8)*(1.2-f.personality.aggression*.45);
+  }else if(d<42&&Math.random()<(hostile?0.98:willingness)){
+    f.state='HUNT';
+  }else{
+    f.state='IDLE';f.idleT=rnd(.8,2.8);f.lookTarget=t;f.target=null;
+  }
+}
+function aiAct(f,dt){
+  updateMood(f,dt);
+  // out-of-combat regen: no damage dealt or taken for 7s -> slowly heal back up
+  if(!f.dead&&f.hp<f.maxHp&&now()-f.lastCombat>7){
+    f.hp=Math.min(f.maxHp,f.hp+f.maxHp*0.06*dt);
+  }
+  let wx=0,wz=0,wantJump=false;
+  f.sprinting=false;f.blocking=false;
+  f.crouchHoldT=Math.max(0,f.crouchHoldT-dt);
+  f.crouch=f.crouchHoldT>0?1:Math.max(0,f.crouch-dt*5);
+  f.strafeT-=dt;f.jumpT-=dt;f.reactT-=dt;f.chatT-=dt;
+  f.healCooldown=Math.max(0,f.healCooldown-dt);f.coverCooldown=Math.max(0,f.coverCooldown-dt);f.crouchActionCooldown=Math.max(0,f.crouchActionCooldown-dt);
+  // Phase 3: ally bond fades over time
+  if(f.allyT>0){f.allyT-=dt;if(f.allyT<=0)f.allyOf=null;}
+  // social trait: chatty NPCs chime in more often
+  if(f.chatT<=0&&!safeDecisionLocked(f)){
+    f.chatT=rnd(14,50)-f.personality.social*10;
+    if(Math.random()<.3+f.personality.social*.3)f.say(pick(Math.random()<.5?CHAT.idle:CHAT.taunt));
+  }
+
+  const goTo=(p,sprint=true)=>{
+    const dx=p.x-f.pos.x,dz=p.z-f.pos.z,d=Math.hypot(dx,dz);
+    if(d>0.4){wx=dx/d;wz=dz/d;f.aimYaw=Math.atan2(-dx,-dz);f.sprinting=sprint&&d>2.2;}
+    return d;
+  };
+
+  switch(f.state){
+    case 'ROAM':{
+      const d=goTo(f.roamPt,f.roamSprint);
+      if(d<1.5){
+        // Phase 4: buddy system - trusted allies/friends tend to wander together
+        let buddy=f.allyOf?fighters.find(x=>x.id===f.allyOf&&!x.dead):null;
+        if(!buddy){
+          for(const [id,m] of f.memory){
+            if(m.trust>0.78){const c=fighters.find(x=>x.id===id);if(c&&!c.dead){buddy=c;break;}}
+          }
+        }
+        if(buddy&&f.pos.distanceTo(buddy.pos)>6&&Math.random()<0.4){
+          const ang=rnd(0,Math.PI*2);
+          f.roamPt=new THREE.Vector3(buddy.pos.x+Math.cos(ang)*3,0,buddy.pos.z+Math.sin(ang)*3);
+        }else{
+          f.roamPt=arenaSpot();
+        }
+        f.roamSprint=Math.random()<0.12+f.personality.aggression*0.18;
+      }
+      // bunny-hop like a bored player
+      if(f.onGround&&f.jumpT<=0&&Math.random()<0.02){wantJump=true;f.jumpT=rnd(.25,1.6);}
+      break;}
+    case 'HUNT':{
+      if(!f.target||f.target.dead||safeDecisionLocked(f.target)){f.state='ROAM';f.target=null;break;}
+      const d=f.pos.distanceTo(f.target.pos);
+      const sprint=d>8&&(f.personality.aggression>0.48||f.mood.anger>0.45);
+      goTo(f.target.pos,sprint);
+      if(f.onGround&&f.jumpT<=0&&sprint&&Math.random()<0.018){wantJump=true;f.jumpT=rnd(.5,1.4);}
+      break;}
+    case 'IDLE':{
+      f.idleT-=dt;f.lookT-=dt;
+      if(f.lookTarget&&!f.lookTarget.dead&&!safeDecisionLocked(f.lookTarget)){
+        const dx=f.lookTarget.pos.x-f.pos.x,dz=f.lookTarget.pos.z-f.pos.z;
+        f.aimYaw=Math.atan2(-dx,-dz);
+        const d=Math.hypot(dx,dz);
+        if(!f.idleGreeted&&d<7&&f.personality.friendliness>0.65&&Math.random()<dt*0.45){
+          f.idleGreeted=true;f.crouchSignal();
+        }
+      }else if(f.lookT<=0){
+        f.aimYaw+=rnd(-1.2,1.2);f.lookT=rnd(.7,2.2);
+      }
+      if(f.idleT<=0){f.state='ROAM';f.roamPt=arenaSpot();f.roamSprint=false;f.lookTarget=null;f.idleGreeted=false;}
+      break;}
+    case 'ASSESS':{
+      const t=f.target;
+      if(!t||t.dead||safeDecisionLocked(t)){f.state='IDLE';f.idleT=rnd(1,2.5);f.lookTarget=null;f.target=null;break;}
+      const dx=t.pos.x-f.pos.x,dz=t.pos.z-f.pos.z,d=Math.hypot(dx,dz)||.001;
+      f.aimYaw=Math.atan2(-dx,-dz);f.assessT-=dt;
+      if(d>7)goTo(t.pos,false);
+      if(f.assessT<=0){
+        const mem=f.memory.get(t.id);
+        const hostile=!!(mem&&mem.revenge>0.35);
+        const willingness=clamp(.28+f.personality.aggression*.58+f.mood.anger*.22+f.personality.confidence*.12-(mem&&mem.trust>.65?.38:0),0,1);
+        if(hostile||Math.random()<willingness){f.state=d<f.reach+3.2?'FIGHT':'HUNT';f.reactT=f.react*rnd(.8,1.4);}
+        else{
+          if(d<7&&f.personality.friendliness>.62&&f.crouchBurstT<=0)f.crouchSignal();
+          f.state='IDLE';f.idleT=rnd(1.2,3.5);f.lookTarget=t;f.target=null;f.idleGreeted=true;
+        }
+      }
+      break;}
+    case 'COVER':{
+      const t=f.target;
+      if(!f.coverPt||!t||t.dead||safeDecisionLocked(t)){f.state='ROAM';f.target=null;f.roamPt=arenaSpot();break;}
+      const d=goTo(f.coverPt,false);f.coverT-=dt;
+      if(d<1.2){
+        wx=0;wz=0;f.sprinting=false;f.crouchHoldT=Math.max(f.crouchHoldT,.2);
+        f.aimYaw=Math.atan2(-(t.pos.x-f.pos.x),-(t.pos.z-f.pos.z));
+      }
+      if(f.coverT<=0){
+        f.coverPt=null;
+        if(f.hp/f.maxHp<0.35&&f.healCooldown<=0)beginRetreat(f);
+        else{f.state='ASSESS';f.assessT=rnd(.5,1.4);}
+      }
+      break;}
+    case 'FIGHT':{
+      const t=f.target;
+      if(!t||t.dead||inSafe(t.pos)||safeLocked(t)){f.state='ROAM';f.target=null;break;}
+      const dx=t.pos.x-f.pos.x,dz=t.pos.z-f.pos.z,d=Math.hypot(dx,dz)||.001;
+      // aim (with human error + reaction)
+      const err=(1-f.skill)*0.28*Math.sin(now()*rnd(1.5,3)+f.id);
+      f.aimYaw=Math.atan2(-dx,-dz)+err;
+      f.pitch=clamp(Math.atan2((f.pos.y+1.5)-(t.pos.y+1.4),d)*-1,-.5,.5);
+      const ideal=f.reach*0.78;
+      const fx=-dx/d,fz=-dz/d; // away from target
+      // spacing
+      if(d>ideal+0.35){wx=-fx;wz=-fz;f.sprinting=d>ideal+1.5;}
+      else if(d<ideal-0.7){wx=fx*0.8;wz=fz*0.8;}
+      // strafe circle
+      if(f.strafeT<=0){f.strafeT=rnd(.5,1.9);if(Math.random()<.45)f.strafeDir*=-1;}
+      wx+=(-fz)*f.strafeDir*0.85;wz+=(fx)*f.strafeDir*0.85;
+      // jump crit
+      if(f.onGround&&f.jumpT<=0&&d<f.reach*1.05&&Math.random()<0.55*f.skill+0.1){
+        wantJump=true;f.jumpT=rnd(.45,1.1);
+      }
+      // sprint-reset (stop sprint right before hitting) — pro behaviour
+      if(d<f.reach*0.9&&f.skill>0.55&&Math.random()<0.5)f.sprinting=false;
+      // block when hurt & on cooldown
+      if(f.atkCd>0.12&&f.hp/f.maxHp<0.65&&Math.random()<0.35*f.skill)f.blocking=true;
+      // attack (Phase 4: friendly fighters may show mercy on a near-dead foe they have no grudge with)
+      if(f.reactT<=0&&f.atkCd<=0&&d<f.reach*0.98){
+        const mem=f.memory.get(t.id);
+        const grudgeHeld=mem&&mem.revenge>0.4;
+        const showMercy=!grudgeHeld&&f.personality.friendliness>0.72&&t.hp/t.maxHp<0.12&&Math.random()<f.personality.friendliness*0.16;
+        if(showMercy){
+          wx=0;wz=0;f.sprinting=false;
+          if(f.crouchBurstT<=0)f.crouchSignal();
+          f.state='ASSESS';f.assessT=rnd(.7,1.3);f.reactT=rnd(.6,1.1);
+        }else{
+        const missChance=clamp((1-f.skill)*0.35-(f.mood.confidence-0.5)*0.08,0.03,0.9);
+        if(Math.random()>missChance){f.yaw=f.aimYaw;}   // snap aim on commit
+        f.attack();
+        if(Math.random()<0.35){ // w-tap forward pressure
+          f.vel.x+=(-fx)*2.2;f.vel.z+=(-fz)*2.2;
+        }
+        }
+      }
+      break;}
+    case 'FLEE':{
+      cascadeFear(f,dt);
+      const d=goTo(f.roamPt,true);f.timer-=dt;f.sprinting=true;
+      if(f.onGround&&f.jumpT<=0&&Math.random()<0.05){wantJump=true;f.jumpT=rnd(.4,1);}
+      if(f.target&&!f.target.dead&&Math.random()<0.025)f.aimYaw=Math.atan2(-(f.target.pos.x-f.pos.x),-(f.target.pos.z-f.pos.z));
+      if(d<1.2||f.timer<=0){f.state='IDLE';f.idleT=rnd(.6,1.5);f.lookTarget=f.target;f.target=null;}
+      break;}
+    case 'SHOP':{
+      const d=goTo(SHOP_POS,false);
+      if(d<2.2){
+        f.shopT-=dt;
+        f.aimYaw=Math.atan2(-(SHOP_POS.x-f.pos.x),-(SHOP_POS.z-f.pos.z));
+        if(f.crouchHoldT<=0&&Math.random()<dt*0.12)f.crouchHoldT=0.4; // stationary browsing crouch
+        if(f.shopT<=0){
+          const up=f.pendingBuy;
+          if(up&&f.coins>=up.cost){
+            f.coins-=up.cost;f.weapon={type:up.type,mat:up.mat};f.refreshWeaponMesh();
+            if(Math.random()<.6)f.say(pick(CHAT.buy));
+          }
+          // sometimes armor instead
+          if(f.armor<ARMORS.length-1){
+            const a=ARMORS[f.armor+1];
+            if(a.rank<=f.rank&&f.coins>=a.cost){f.coins-=a.cost;f.armor++;f.refreshWeaponMesh();}
+          }
+          f.state='ROAM';f.roamPt=arenaSpot();f.pendingBuy=null;f.campT=0;
+        }
+      }
+      break;}
+    case 'TAUNT':{
+      const d=goTo(f.roamPt,false);
+      f.tauntT-=dt;
+      if(d<2){f.crouch=(Math.sin(now()*16)>0)?1:0;}
+      if(f.tauntT<=0){f.state='ROAM';f.roamPt=arenaSpot();}
+      break;}
+    case 'WATCH':{
+      const wt=f.watchTarget;
+      if(!wt||wt.dead||wt.state!=='FIGHT'){f.state='ROAM';f.roamPt=arenaSpot();break;}
+      const dx=wt.pos.x-f.pos.x,dz=wt.pos.z-f.pos.z,d=Math.hypot(dx,dz)||.001;
+      f.watchT-=dt;
+      if(d>12){wx=dx/d;wz=dz/d;f.aimYaw=Math.atan2(-dx,-dz);}
+      else{
+        f.aimYaw=Math.atan2(-dx,-dz);
+        if(f.crouchBurstT<=0&&f.crouchActionCooldown<=0&&Math.random()<dt*0.08){f.crouchActionCooldown=rnd(3,6);f.crouchSignal();}
+      }
+      if(f.watchT<=0){f.state='ROAM';f.roamPt=arenaSpot();}
+      break;}
+    case 'PEACE':{
+      // Phase 4: walk toward the pair, crouch-spam a plea for them to stop, never attack first
+      const a=f.watchTarget,b=a?a.target:null;
+      if(!a||a.dead||!b||b.dead||a.state!=='FIGHT'){f.state='ROAM';f.roamPt=arenaSpot();break;}
+      const mx=(a.pos.x+b.pos.x)/2,mz=(a.pos.z+b.pos.z)/2;
+      const dx=mx-f.pos.x,dz=mz-f.pos.z,d=Math.hypot(dx,dz)||.001;
+      f.watchT-=dt;
+      if(d>4.5){wx=dx/d;wz=dz/d;}
+      f.aimYaw=Math.atan2(-dx,-dz);
+      if(d<=4.5&&f.crouchBurstT<=0&&f.crouchActionCooldown<=0&&Math.random()<dt*0.18){f.crouchActionCooldown=rnd(2.5,5);f.crouchSignal();}
+      if(f.watchT<=0){f.state='ROAM';f.roamPt=arenaSpot();}
+      break;}
+  }
+  // stuck-handling only while intentionally moving; idle NPCs no longer twitch/jump from stale collision flags
+  const moving=Math.hypot(wx,wz)>0.1;
+  if(moving&&(f.blockedX||f.blockedZ)&&f.onGround&&Math.random()<0.25){wantJump=true;}
+  if(moving&&(f.blockedX||f.blockedZ)&&Math.random()<0.04){f.strafeDir*=-1;if(f.state==='ROAM')f.roamPt=arenaSpot();}
+
+  const rate=lerp(5,14,f.skill);
+  f.yaw=angLerp(f.yaw,f.aimYaw,1-Math.exp(-dt*rate));
+  f.applyMove(wx,wz,dt);
+  if(wantJump)f.jump();
+  if(f.atkCd>0)f.atkCd-=dt;
+  physics(f,dt);
+  f.updateVisual(dt);
+}
+
+/* ============================================================ PLAYER */
+const player=new Fighter({isPlayer:true,name:'You',pos:new THREE.Vector3(0,0,0),maxHp:100});
+player.xp=0;player.coins=120;player.rank=0;
+player.name='YOU';
+player.owned=[{type:TYPES[0],mat:MATS[0]}];
+player.weapon=player.owned[0];
+player.sel=0;
+
+let fighters=[player];
+
+function spawnNPCs(){
+  // remove old npcs
+  fighters=[player];
+  const a=ARENA;
+  // Phase 4: a proper population (10-15) with fighters spread out and levels distributed on purpose
+  const npcCount=irnd(10,15);
+  const levelBag=buildLevelBag(npcCount);
+  for(let i=0;i<npcCount;i++){
+    const tier=irnd(a.tiers[0],a.tiers[1]);
+    const mat=MATS[clamp(tier+irnd(-1,0),0,4)];
+    const f=new Fighter({
+      pos:arenaSpot(12),maxHp:a.hp,rank:ARENA_I,
+      weapon:{type:pick(TYPES),mat},
+      coins:irnd(30,260),armor:clamp(irnd(ARENA_I-1,ARENA_I+1),0,4),
+      level:levelBag[i],
+      archetype:pick(ARCHETYPES)
+    });
+    fighters.push(f);
+  }
+  seedInitialStates(); // Phase 5: arena feels alive the instant you spawn in
+}
+// Phase 5: seed a believable mix of initial states instead of everyone idly roaming
+function seedInitialStates(){
+  const pool=fighters.filter(f=>!f.isPlayer).sort((a,b)=>b.aggro-a.aggro);
+  if(pool.length<2)return;
+  const takeOne=()=>pool.length?pool.shift():null;
+  // Start with 2-3 active duels, led by the more aggressive personalities.
+  const fightPairs=Math.min(3,Math.max(2,Math.floor(pool.length/5)));
+  let watchedFight=null;
+  for(let i=0;i<fightPairs&&pool.length>=2;i++){
+    const a=takeOne(),b=takeOne();
+    a.pos.copy(arenaSpot(6));b.pos.set(a.pos.x+rnd(-3,3),a.pos.y,a.pos.z+rnd(-3,3));
+    a.target=b;a.state='FIGHT';a.reactT=a.react;
+    b.target=a;b.state='FIGHT';b.reactT=b.react*1.2;
+    watchedFight=watchedFight||a;
+  }
+  // At most one social spectator; the rest remain available to roam, hunt, shop, or join fights.
+  if(watchedFight&&pool.length){const w=takeOne();w.state='WATCH';w.watchTarget=watchedFight;w.watchT=rnd(2.5,5);}
+  if(pool.length){const s=takeOne();s.state='SHOP';s.shopT=rnd(1.5,3.5);s.pendingBuy=upgradeCost(s);}
+}
+
+/* ---------- view model ---------- */
+let VM=null;
+function buildViewModel(){
+  vmScene.children.filter(c=>c.isGroup).forEach(c=>vmScene.remove(c));
+  const g=new THREE.Group();
+  const arm=new THREE.Group();
+  const sk=new THREE.Mesh(new THREE.BoxGeometry(.26,.72,.26),new THREE.MeshLambertMaterial({color:player.skin}));
+  sk.position.y=-.3;arm.add(sk);
+  arm.rotation.set(-.3,0,-.15);
+  const w=buildWeaponMesh(player.weapon.type.id,player.weapon.mat,0.85);
+  w.position.set(0,-.55,-.1);w.rotation.set(.15,0,.25);
+  arm.add(w);
+  g.add(arm);
+  g.position.set(.42,-.42,-.62);
+  g.rotation.set(0,-.35,0);
+  vmScene.add(g);
+  VM={g,arm};
+}
+buildViewModel();
+
+/* ============================================================ INPUT */
+const keys={};
+let MOBILE=matchMedia('(pointer: coarse)').matches||('ontouchstart' in window && innerWidth<1200);
+const input={mx:0,mz:0,look:{x:0,y:0},attack:false,block:false,jump:false,sprint:false};
+let locked=false;
+
+const mobEl=document.getElementById('mob');
+function enableMobile(){if(MOBILE)mobEl.classList.add('on');}
+if(MOBILE)enableMobile();
+addEventListener('touchstart',()=>{if(!MOBILE){MOBILE=true;enableMobile();}},{once:true,passive:true});
+
+/* ---- PC ---- */
+addEventListener('keydown',e=>{
+  if(e.code==='Tab')e.preventDefault();
+  const wasDown=keys[e.code];
+  keys[e.code]=true;
+  if(e.code==='KeyE')toggleShop();
+  if(e.code==='KeyM'){sndOn=!sndOn;UI.toast('Sound '+(sndOn?'ON':'OFF'));}
+  if(e.code==='KeyC'&&!wasDown&&!player.dead)player.crouchSignal();
+  if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();}}
+});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+renderer.domElement.addEventListener('mousedown',e=>{
+  if(MOBILE)return;
+  if(!locked&&!shopOpen&&!startOpen&&!deadOpen){renderer.domElement.requestPointerLock();return;}
+  if(e.button===0)input.attack=true;
+  if(e.button===2)input.block=true;
+});
+addEventListener('mouseup',e=>{if(e.button===0)input.attack=false;if(e.button===2)input.block=false;});
+addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===renderer.domElement;});
+addEventListener('mousemove',e=>{
+  if(!locked)return;
+  player.yaw-=e.movementX*0.0022;
+  player.pitch=clamp(player.pitch-e.movementY*0.0022,-1.5,1.5);
+});
+
+/* ---- MOBILE ---- */
+const stick=document.getElementById('stick'),knob=document.getElementById('knob');
+let stickId=null,lookId=null,lastLook={x:0,y:0};
+stick.addEventListener('touchstart',e=>{
+  e.preventDefault();const t=e.changedTouches[0];stickId=t.identifier;
+  moveKnob(t);
+},{passive:false});
+function moveKnob(t){
+  const r=stick.getBoundingClientRect();
+  const cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let dx=t.clientX-cx,dy=t.clientY-cy;
+  const max=r.width/2;const d=Math.hypot(dx,dy);
+  if(d>max){dx*=max/d;dy*=max/d;}
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+  input.mx=dx/max;input.mz=dy/max;
+  if(Math.hypot(input.mx,input.mz)>0.82)input.sprint=true;
+}
+addEventListener('touchmove',e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===stickId){moveKnob(t);e.preventDefault();}
+    else if(t.identifier===lookId){
+      player.yaw-=(t.clientX-lastLook.x)*0.0055;
+      player.pitch=clamp(player.pitch-(t.clientY-lastLook.y)*0.0055,-1.5,1.5);
+      lastLook.x=t.clientX;lastLook.y=t.clientY;e.preventDefault();
+    }
+  }
+},{passive:false});
+function endTouch(e){
+  for(const t of e.changedTouches){
+    if(t.identifier===stickId){stickId=null;input.mx=input.mz=0;input.sprint=false;knob.style.transform='';}
+    if(t.identifier===lookId)lookId=null;
+  }
+}
+addEventListener('touchend',endTouch);addEventListener('touchcancel',endTouch);
+renderer.domElement.addEventListener('touchstart',e=>{
+  for(const t of e.changedTouches){
+    if(lookId===null&&t.clientX>innerWidth*0.32){lookId=t.identifier;lastLook.x=t.clientX;lastLook.y=t.clientY;}
+  }
+},{passive:true});
+function holdBtn(id,on,off){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('on');on();},{passive:false});
+  const end=e=>{e.preventDefault();el.classList.remove('on');off&&off();};
+  el.addEventListener('touchend',end);el.addEventListener('touchcancel',end);
+}
+holdBtn('bAtk',()=>input.attack=true,()=>input.attack=false);
+holdBtn('bBlk',()=>input.block=true,()=>input.block=false);
+holdBtn('bJmp',()=>input.jump=true,()=>input.jump=false);
+const sprBtn=document.getElementById('bSpr');
+sprBtn.addEventListener('touchstart',e=>{e.preventDefault();input.sprint=!input.sprint;sprBtn.classList.toggle('on',input.sprint);},{passive:false});
+document.getElementById('bShop').addEventListener('touchstart',e=>{e.preventDefault();toggleShop();},{passive:false});
+document.getElementById('bCrouch').addEventListener('touchstart',e=>{e.preventDefault();if(!player.dead)player.crouchSignal();},{passive:false});
+
+/* ============================================================ UI */
+const el=id=>document.getElementById(id);
+const UI={
+  hearts(){
+    const n=10,box=el('hearts');
+    if(box.children.length!==n){box.innerHTML='';for(let i=0;i<n;i++){const d=document.createElement('div');d.className='heart';box.appendChild(d);} }
+    const p=clamp(player.hp/player.maxHp,0,1)*n;
+    [...box.children].forEach((d,i)=>{
+      d.className='heart'+(p>=i+1?' full':p>i+0.35?' half':'');
+    });
+  },
+  hotbar(){
+    const b=el('hotbar');b.innerHTML='';
+    player.owned.forEach((w,i)=>{
+      const d=document.createElement('div');
+      d.className='slot'+(i===player.sel?' sel':'');
+      d.innerHTML=`<span style="color:#${w.mat.col.toString(16).padStart(6,'0')}">${w.mat.name}<br>${w.type.name}</span><small>${i+1}</small>`;
+      d.addEventListener('touchstart',e=>{e.preventDefault();player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();},{passive:false});
+      d.addEventListener('click',()=>{player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();});
+      b.appendChild(d);
+    });
+  },
+  stats(){
+    const r=RANKS[player.rank],nx=RANKS[player.rank+1];
+    el('rankLine').innerHTML=`RANK: <span style="color:${r.col}">${r.name}</span>`;
+    el('arenaLine').textContent='ARENA: '+ARENA.name;
+    const base=r.xp,top=nx?nx.xp:r.xp+1;
+    el('xpfill').style.width=(nx?clamp((player.xp-base)/(top-base),0,1)*100:100)+'%';
+    el('xptext').textContent=nx?`${player.xp} / ${nx.xp} XP → ${nx.name}`:`${player.xp} XP · MAX RANK`;
+    el('coins').textContent='⛃ '+player.coins+' coins';
+    el('wep').textContent=`${player.weapon.mat.name} ${player.weapon.type.name} · ${ARMORS[player.armor].name} · K/D ${player.kills}/${player.deaths}`;
+    this.hearts();
+  },
+  board(){
+    const arr=[...fighters].sort((a,b)=>b.kills-a.kills).slice(0,7);
+    el('board').innerHTML='<b>LEADERBOARD</b>'+arr.map(f=>
+      `<div class="${f.isPlayer?'me':''}"><span>${f.isPlayer?'YOU':f.name}</span><span>${f.kills}</span></div>`).join('');
+  },
+  feed(t){
+    const d=document.createElement('div');
+    d.innerHTML=t.replace(/§7/g,'').length?t.replace('§7','<span style="opacity:.7">')+'</span>':t;
+    el('kills').prepend(d);
+    while(el('kills').children.length>6)el('kills').lastChild.remove();
+    setTimeout(()=>{d.style.transition='opacity .6s';d.style.opacity=0;setTimeout(()=>d.remove(),700);},7000);
+  },
+  kill(by,vic){
+    const w=by?`${by.weapon.mat.name} ${by.weapon.type.name}`:'gravity';
+    const n=v=>v.isPlayer?'<span style="color:#7ee36b">YOU</span>':v.name;
+    this.feed(`${by?n(by):'???'} <span style="opacity:.7">[${w}]</span> ⚔ ${n(vic)}`);
+  },
+  chat(name,text,rank){
+    const d=document.createElement('div');
+    d.innerHTML=`<span style="color:${RANKS[rank||0].col}">&lt;${name}&gt;</span> ${text}`;
+    el('chat').prepend(d);
+    while(el('chat').children.length>7)el('chat').lastChild.remove();
+    setTimeout(()=>{d.style.transition='opacity .8s';d.style.opacity=0;setTimeout(()=>d.remove(),900);},9000);
+  },
+  hitmark(){const h=el('hitmark');h.classList.add('on');clearTimeout(h._t);h._t=setTimeout(()=>h.classList.remove('on'),110);},
+  hurt(){const h=el('hurt');h.style.opacity=.85;clearTimeout(h._t);h._t=setTimeout(()=>h.style.opacity=0,120);this.hearts();},
+  toast(t){const x=el('toast');x.textContent=t;x.style.opacity=1;clearTimeout(x._t);x._t=setTimeout(()=>x.style.opacity=0,1400);},
+  banner(t,sub){const b=el('banner');b.innerHTML=t+(sub?`<small>${sub}</small>`:'');b.style.opacity=1;clearTimeout(b._t);b._t=setTimeout(()=>b.style.opacity=0,2600);},
+  pops:[],
+  popup(world3,text,color){
+    if(this.pops.length>12)return;
+    const d=document.createElement('div');d.className='pop';d.style.color=color;d.textContent=text;
+    el('hud').appendChild(d);
+    this.pops.push({d,p:world3.clone(),life:0.95});
+  },
+  updatePops(dt){
+    for(let i=this.pops.length-1;i>=0;i--){
+      const o=this.pops[i];o.life-=dt;o.p.y+=dt*1.2;
+      if(o.life<=0){o.d.remove();this.pops.splice(i,1);continue;}
+      const v=o.p.clone().project(camera);
+      if(v.z>1){o.d.style.display='none';continue;}
+      o.d.style.display='';
+      o.d.style.left=((v.x*.5+.5)*innerWidth)+'px';
+      o.d.style.top=((-v.y*.5+.5)*innerHeight)+'px';
+      o.d.style.opacity=clamp(o.life,0,1);
+    }
+  },
+  showDead(by){
+    deadOpen=true;
+    el('deadTxt').innerHTML=`You were killed by <b>${by}</b>.<br>Lost 10% coins. XP kept.`;
+    el('dead').classList.remove('hide');
+    if(locked)document.exitPointerLock();
+  }
+};
+
+/* ---------- rank / arena progression ---------- */
+function checkRank(){
+  let r=0;
+  for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)r=i;
+  if(r>player.rank){
+    player.rank=r;S.lvl();
+    UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
+    UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
+  }
+  player.maxHp=100+player.rank*10;
+  UI.stats();
+}
+function travel(dir){
+  const i=ARENA_I+dir;
+  if(i<0||i>=ARENAS.length){UI.toast('No arena there');return;}
+  if(i>player.rank){UI.toast('LOCKED — need rank '+RANKS[i].name);return;}
+  buildArena(i);
+  buildViewModel();
+  player.pos.copy(arenaSpot());player.vel.set(0,0,0);player.hp=player.maxHp;
+  spawnNPCs();
+  UI.banner('ENTERED '+ARENA.name,`${fighters.length-1} players online · rewards x${ARENA.reward}`);
+  UI.stats();UI.hotbar();
+  S.lvl();
+}
+
+/* ---------- shop ---------- */
+let shopOpen=false,startOpen=true,deadOpen=false;
+function toggleShop(){
+  if(startOpen||deadOpen)return;
+  if(!shopOpen&&player.pos.distanceTo(SHOP_POS)>4){UI.toast('Move closer to the gold shop block');return;}
+  shopOpen=!shopOpen;
+  el('shop').classList.toggle('hide',!shopOpen);
+  if(shopOpen){renderShop();if(locked)document.exitPointerLock();}
+}
+el('closeShop').onclick=()=>toggleShop();
+function renderShop(){
+  el('shopCoins').textContent='⛃ '+player.coins;
+  let h='<h2>WEAPONS</h2><div class="cols">';
+  for(const ty of TYPES){
+    h+='<div>';
+    for(const mt of MATS){
+      const cost=Math.round(ty.cost*mt.cost);
+      const owned=player.owned.some(w=>w.type===ty&&w.mat===mt);
+      const locked=mt.rank>player.rank;
+      const can=player.coins>=cost&&!locked&&!owned;
+      h+=`<div class="item ${owned?'own':can?'':'no'}" data-t="${ty.id}" data-m="${mt.id}">
+      <b style="color:#${mt.col.toString(16).padStart(6,'0')}">${mt.name} ${ty.name}</b>
+      dmg ${(ty.dmg*mt.mult).toFixed(1)} · spd ${(1/(ty.cd*mt.cd)).toFixed(2)}/s · reach ${ty.reach}
+      <br>${owned?'<span style="color:#7ee36b">OWNED</span>':locked?'<span style="color:#e35">needs '+RANKS[mt.rank].name+'</span>':'<span class="cost">⛃ '+cost+'</span>'}</div>`;
+    }
+    h+='</div>';
+  }
+  h+='</div><h2>ARMOR &amp; SUPPLIES</h2>';
+  for(let i=1;i<ARMORS.length;i++){
+    const a=ARMORS[i];const have=player.armor>=i;const lock=a.rank>player.rank;
+    h+=`<div class="item ${have?'own':(player.coins>=a.cost&&!lock?'':'no')}" data-a="${i}">
+      <b>${a.name}</b> -${Math.round(a.red*100)}% damage taken ·
+      ${have?'<span style="color:#7ee36b">EQUIPPED</span>':lock?'<span style="color:#e35">needs '+RANKS[a.rank].name+'</span>':'<span class="cost">⛃ '+a.cost+'</span>'}</div>`;
+  }
+  h+=`<div class="item ${player.coins>=40?'':'no'}" data-p="1"><b>Healing Potion</b> instantly heal 55 HP · <span class="cost">⛃ 40</span></div>`;
+  el('shopBody').innerHTML=h;
+  el('shopBody').querySelectorAll('.item').forEach(d=>{
+    d.onclick=()=>{
+      if(d.dataset.t){
+        const ty=TYPES.find(t=>t.id===d.dataset.t),mt=MATS.find(m=>m.id===d.dataset.m);
+        const cost=Math.round(ty.cost*mt.cost);
+        if(mt.rank>player.rank)return UI.toast('Locked: need '+RANKS[mt.rank].name);
+        if(player.owned.some(w=>w.type===ty&&w.mat===mt))return UI.toast('Already owned');
+        if(player.coins<cost)return UI.toast('Not enough coins');
+        player.coins-=cost;
+        if(player.owned.length>=6)player.owned.shift();
+        player.owned.push({type:ty,mat:mt});
+        player.sel=player.owned.length-1;player.weapon=player.owned[player.sel];
+        buildViewModel();S.buy();UI.hotbar();
+      }else if(d.dataset.a){
+        const i=+d.dataset.a,a=ARMORS[i];
+        if(player.armor>=i)return;
+        if(a.rank>player.rank)return UI.toast('Locked: need '+RANKS[a.rank].name);
+        if(player.coins<a.cost)return UI.toast('Not enough coins');
+        player.coins-=a.cost;player.armor=i;S.buy();
+      }else if(d.dataset.p){
+        if(player.coins<40)return UI.toast('Not enough coins');
+        player.coins-=40;player.hp=Math.min(player.maxHp,player.hp+55);S.buy();
+      }
+      UI.stats();renderShop();
+    };
+  });
+}
+
+/* ---------- start / death ---------- */
+el('playBtn').onclick=()=>{
+  startOpen=false;el('start').classList.add('hide');
+  if(!MOBILE)renderer.domElement.requestPointerLock();
+  UI.banner('WELCOME TO '+ARENA.name,'Kill players → earn XP → rank up → next arena');
+};
+el('respawnBtn').onclick=()=>{
+  deadOpen=false;el('dead').classList.add('hide');
+  player.dead=false;player.hp=player.maxHp;player.pos.copy(arenaSpot(8));player.vel.set(0,0,0);
+  UI.stats();
+  if(!MOBILE)renderer.domElement.requestPointerLock();
+};
+
+/* ============================================================ PLAYER UPDATE */
+let portalT=0;
+function updatePlayer(dt){
+  if(player.dead)return;
+  // out-of-combat regen: no damage dealt or taken for 7s -> slowly heal back up
+  if(player.hp<player.maxHp&&now()-player.lastCombat>7){
+    player.hp=Math.min(player.maxHp,player.hp+player.maxHp*0.06*dt);
+    UI.hearts();
+  }
+  let wx=0,wz=0;
+  const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+  const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
+  if(!MOBILE){
+    let f=0,s=0;
+    if(keys.KeyW)f+=1;if(keys.KeyS)f-=1;if(keys.KeyA)s-=1;if(keys.KeyD)s+=1;
+    wx=fx*f+rx*s;wz=fz*f+rz*s;
+    player.sprinting=!!(keys.ShiftLeft||keys.ShiftRight)&&f>0;
+    if(keys.Space)player.jump();
+  }else{
+    const f=-input.mz,s=input.mx;
+    wx=fx*f+rx*s;wz=fz*f+rz*s;
+    player.sprinting=input.sprint&&(Math.abs(f)+Math.abs(s))>0.3;
+    if(input.jump)player.jump();
+  }
+  player.blocking=(!MOBILE?input.block:input.block);
+  if(!shopOpen&&!startOpen&&input.attack&&player.atkCd<=0)player.attack();
+  if(player.atkCd>0)player.atkCd-=dt;
+  player.applyMove(wx,wz,dt);
+  physics(player,dt);
+  if(player.swing>0)player.swing=Math.max(0,player.swing-dt*4.2);
+  player.crouch=Math.max(0,player.crouch-dt*5); // Phase 3: crouch-signal decay
+  // portals
+  const nearPad=p=>Math.abs(player.pos.x-p.x)<1.6&&Math.abs(player.pos.z-p.z)<1.6&&player.pos.y<1.5;
+  let onPad=0;
+  if(PORTAL_NEXT&&nearPad(PORTAL_NEXT))onPad=1;
+  else if(PORTAL_PREV&&nearPad(PORTAL_PREV))onPad=-1;
+  if(onPad){
+    portalT+=dt;
+    const nx=ARENA_I+onPad;
+    const ok=nx>=0&&nx<ARENAS.length&&nx<=player.rank;
+    UI.toast(ok?`Warping to ${ARENAS[nx]?ARENAS[nx].name:'???'}... ${(1.2-portalT).toFixed(1)}s`
+              :(nx>=ARENAS.length?'No arena beyond LEGEND':nx<0?'This is the first arena':'LOCKED — reach rank '+RANKS[nx].name));
+    if(portalT>1.2){portalT=0;travel(onPad);}
+  }else portalT=0;
+
+  // camera
+  const bob=Math.sin(player.anim*3.4)*(player.sprinting?0.055:0.03)*Math.min(Math.hypot(player.vel.x,player.vel.z)/4,1);
+  camera.position.set(player.pos.x,player.pos.y+1.62+bob-player.crouch*0.3,player.pos.z);
+  camera.rotation.y=player.yaw;camera.rotation.x=player.pitch;
+  const targetFov=player.sprinting?82:75;
+  camera.fov+=(targetFov-camera.fov)*Math.min(1,dt*8);camera.updateProjectionMatrix();
+  // viewmodel anim
+  if(VM){
+    const sw=Math.sin(player.swing*Math.PI);
+    VM.arm.rotation.x=-0.3-sw*1.9+ (player.blocking?-0.9:0);
+    VM.arm.rotation.z=-0.15+sw*0.6;
+    VM.g.position.x=0.42+Math.sin(player.anim*3.4)*0.035-(player.blocking?0.12:0);
+    VM.g.position.y=-0.42+Math.abs(Math.cos(player.anim*3.4))*0.03+(player.blocking?0.06:0);
+  }
+}
+
+/* ============================================================ MAIN LOOP */
+buildArena(0);
+player.pos.copy(arenaSpot());
+spawnNPCs();
+UI.stats();UI.hotbar();UI.board();
+UI.chat('SERVER','Welcome! Kill players to earn XP and coins.',0);
+
+let last=now(),boardT=0;
+function loop(){
+  requestAnimationFrame(loop);
+  const t=now();let dt=Math.min(t-last,0.05);last=t;
+  if(!startOpen&&!deadOpen&&!shopOpen){
+    updatePlayer(dt);
+    for(const f of fighters){
+      if(f.isPlayer)continue;
+      if(f.dead){f.respawnT-=dt;if(f.respawnT<=0)f.respawn();continue;}
+      f.think-=dt;
+      if(f.think<=0)aiThink(f);
+      aiAct(f,dt);
+    }
+    resolveCrouchSignals(dt);
+    updateParticles(dt);
+    UI.updatePops(dt);
+    boardT+=dt;
+    if(boardT>0.8){boardT=0;UI.board();UI.stats();}
+    // spin the shop block & pulse portals
+    world.children.forEach(c=>{if(c.userData.spin)c.rotation.y+=dt*1.1;});
+    if(PORTAL_NEXT)PORTAL_NEXT.mesh.material.opacity=.55+Math.sin(t*4)*.25;
+    if(PORTAL_PREV)PORTAL_PREV.mesh.material.opacity=.55+Math.sin(t*4+1)*.25;
+  }
+  renderer.clear();
+  renderer.render(scene,camera);
+  renderer.clearDepth();
+  renderer.render(vmScene,vmCam);
+}
+loop();
+</script>
+</body>
+</html>
