@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>BLOCK ARENA — Ranked PvP</title>
+<!-- CrazyGames SDK v3 — must be included before the game code. Docs: https://docs.crazygames.com/sdk/intro/ -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:#111;font-family:"Courier New",Consolas,monospace;color:#fff;user-select:none;touch-action:none}
@@ -194,6 +196,59 @@ const S={hit:()=>beep(220,.09,'square',.05,60),crit:()=>beep(520,.12,'square',.0
   hurt:()=>beep(140,.14,'sawtooth',.07,-40),die:()=>{beep(180,.18,'square',.06,-120);setTimeout(()=>beep(110,.25,'square',.05,-60),120);},
   buy:()=>beep(700,.08,'triangle',.05,200),lvl:()=>{[523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,.15,'triangle',.05),i*90));},
   swing:()=>beep(90,.05,'sine',.03,40),block:()=>beep(300,.06,'triangle',.04)};
+
+/* ============================================================ CRAZYGAMES SDK v3 BRIDGE
+   Wraps the SDK so the game also runs standalone (off-CrazyGames) without errors.
+   Implements the platform requirements:
+   - SDK.init() + loadingStart/loadingStop
+   - gameplayStart/gameplayStop around every game break (menus, death, shop, ads)
+   - midgame + rewarded ads, game audio muted for the whole duration of every ad
+   - happytime() on rank-up (recommended event)                               */
+const CG={ready:false,loaded:false,loadingStopped:false,gameplayActive:false,prevSnd:true,lastMidgame:-1e9};
+const CG_SDK=()=>window.CrazyGames&&window.CrazyGames.SDK;
+const MIDGAME_COOLDOWN=180; // seconds between interstitials — CrazyGames QA rejects ads shown too often
+async function cgInit(){
+  try{
+    if(!CG_SDK())return;
+    await window.CrazyGames.SDK.init();
+    CG.ready=true;
+    try{window.CrazyGames.SDK.game.loadingStart();}catch(e){}
+    cgMaybeLoadingStop();
+    console.log('[CG] CrazyGames SDK ready · environment:',window.CrazyGames.SDK.environment);
+  }catch(e){console.warn('[CG] SDK init failed — running standalone:',e);}
+}
+cgInit();
+function cgMaybeLoadingStop(){
+  if(CG.ready&&CG.loaded&&!CG.loadingStopped){
+    CG.loadingStopped=true;
+    try{window.CrazyGames.SDK.game.loadingStop();}catch(e){}
+  }
+}
+function cgGameplayStart(){
+  if(!CG.ready||CG.gameplayActive)return;CG.gameplayActive=true;
+  try{window.CrazyGames.SDK.game.gameplayStart();}catch(e){}
+}
+function cgGameplayStop(){
+  if(!CG.ready||!CG.gameplayActive)return;CG.gameplayActive=false;
+  try{window.CrazyGames.SDK.game.gameplayStop();}catch(e){}
+}
+function cgMute(m){ // ads must always mute game audio
+  if(m)CG.prevSnd=sndOn;
+  sndOn=m?false:CG.prevSnd;
+  try{if(AC)(m?AC.suspend():AC.resume());}catch(e){}
+}
+function cgMidgameReady(){return CG.ready&&(now()-CG.lastMidgame)>=MIDGAME_COOLDOWN;}
+function cgRequestAd(type,onFinished,onError){ // never throws; always restores audio
+  CG.lastMidgame=now();
+  try{
+    CG_SDK().ad.requestAd(type,{
+      adStarted:()=>cgMute(true),
+      adFinished:()=>{cgMute(false);if(onFinished)onFinished();},
+      adError:()=>{cgMute(false);if(onError)onError();}
+    });
+  }catch(e){cgMute(false);if(onError)onError(e);}
+}
+function cgHappy(){if(CG.ready){try{window.CrazyGames.SDK.game.happytime();}catch(e){}}}
 
 /* ============================================================ TEXTURES (16x16 pixel art) */
 const TEXCACHE={};
@@ -1762,6 +1817,7 @@ const UI={
   },
   showDead(by){
     deadOpen=true;
+    cgGameplayStop(); // SDK: game break (death screen)
     el('deadTxt').innerHTML=`You were killed by <b>${by}</b>.<br>Lost 10% coins. XP kept.`;
     el('dead').classList.remove('hide');
     if(locked)document.exitPointerLock();
@@ -1774,6 +1830,7 @@ function checkRank(){
   for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)r=i;
   if(r>player.rank){
     player.rank=r;S.lvl();
+    cgHappy(); // SDK: happytime on a feel-good moment
     UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
     UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
   }
@@ -1800,12 +1857,14 @@ function toggleShop(){
   if(!shopOpen&&player.pos.distanceTo(SHOP_POS)>4){UI.toast('Move closer to the gold shop block');return;}
   shopOpen=!shopOpen;
   el('shop').classList.toggle('hide',!shopOpen);
-  if(shopOpen){renderShop();if(locked)document.exitPointerLock();}
+  if(shopOpen){cgGameplayStop();renderShop();if(locked)document.exitPointerLock();}
+  else cgGameplayStart(); // SDK: shop = game break, closing = gameplay resumes
 }
 el('closeShop').onclick=()=>toggleShop();
 function renderShop(){
   el('shopCoins').textContent='⛃ '+player.coins;
-  let h='<h2>WEAPONS</h2><div class="cols">';
+  let h='<div class="item" data-ad="1" style="border-color:#ffd84b"><b style="color:#ffd84b">▶ WATCH AD → +150 ⛃</b> free coins for the arena fund · <span style="opacity:.75">rewarded ad</span></div>'
+       +'<h2>WEAPONS</h2><div class="cols">';
   for(const ty of TYPES){
     h+='<div>';
     for(const mt of MATS){
@@ -1851,6 +1910,14 @@ function renderShop(){
       }else if(d.dataset.p){
         if(player.coins<40)return UI.toast('Not enough coins');
         player.coins-=40;player.hp=Math.min(player.maxHp,player.hp+55);S.buy();
+      }else if(d.dataset.ad){
+        // SDK rewarded ad: +150 coins on completion
+        if(CG.adBusy)return;CG.adBusy=true;
+        UI.toast('Loading ad...');
+        cgRequestAd('rewarded',
+          ()=>{CG.adBusy=false;player.coins+=150;S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
+          ()=>{CG.adBusy=false;UI.toast('No ad available right now — try again soon');});
+        return; // coins/UI refresh handled in callbacks
       }
       UI.stats();renderShop();
     };
@@ -1861,13 +1928,20 @@ function renderShop(){
 el('playBtn').onclick=()=>{
   startOpen=false;el('start').classList.add('hide');
   if(!MOBILE)renderer.domElement.requestPointerLock();
+  cgGameplayStart(); // SDK: active gameplay begins
   UI.banner('WELCOME TO '+ARENA.name,'Kill players → earn XP → rank up → next arena');
 };
 el('respawnBtn').onclick=()=>{
-  deadOpen=false;el('dead').classList.add('hide');
-  player.dead=false;player.hp=player.maxHp;player.pos.copy(arenaSpot(8));player.vel.set(0,0,0);
-  UI.stats();
-  if(!MOBILE)renderer.domElement.requestPointerLock();
+  const doRespawn=()=>{
+    deadOpen=false;el('dead').classList.add('hide');
+    player.dead=false;player.hp=player.maxHp;player.pos.copy(arenaSpot(8));player.vel.set(0,0,0);
+    UI.stats();
+    if(!MOBILE)renderer.domElement.requestPointerLock();
+    cgGameplayStart(); // SDK: gameplay resumes
+  };
+  // death screen is a natural break: show an interstitial, throttled to 1 per MIDGAME_COOLDOWN
+  if(cgMidgameReady())cgRequestAd('midgame',doRespawn,doRespawn);
+  else doRespawn();
 };
 
 /* ============================================================ PLAYER UPDATE */
@@ -1937,6 +2011,10 @@ player.pos.copy(arenaSpot());
 spawnNPCs();
 UI.stats();UI.hotbar();UI.board();
 UI.chat('SERVER','Welcome! Kill players to earn XP and coins.',0);
+CG.loaded=true;cgMaybeLoadingStop(); // game is rendered & playable → loading finished
+
+/* tiny e2e hook — inert unless the page URL contains #e2e (used by automated tests) */
+if(location.hash.includes('e2e'))window.__E2E={player,el,UI,SHOP_POS,kill:()=>UI.showDead('e2e-test'),state:()=>({startOpen,deadOpen,shopOpen})};
 
 let last=now(),boardT=0;
 function loop(){
