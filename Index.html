@@ -130,7 +130,7 @@ ul{padding-left:18px}
 <div class="ov" id="start">
   <div class="panel">
     <h1 class="mc">BLOCK ARENA</h1>
-    <p style="text-align:center">Free-for-all ranked PvP · 5 arenas · earn XP, rank up, unlock better gear.</p>
+    <p style="text-align:center">Free-for-all ranked PvP · 5 arenas · earn XP, rank up, unlock better gear.<br><span style="color:#8ee27a">☁ Progress auto-saves to your CrazyGames account</span></p>
     <h2>RANKS</h2>
     <p>NOOB → PRO → ELITE → MASTER → LEGEND. Each rank unlocks the next arena portal and better weapon materials.</p>
     <h2>PC CONTROLS</h2>
@@ -207,15 +207,18 @@ const S={hit:()=>beep(220,.09,'square',.05,60),crit:()=>beep(520,.12,'square',.0
 const CG={ready:false,loaded:false,loadingStopped:false,gameplayActive:false,prevSnd:true,lastMidgame:-1e9};
 const CG_SDK=()=>window.CrazyGames&&window.CrazyGames.SDK;
 const MIDGAME_COOLDOWN=180; // seconds between interstitials — CrazyGames QA rejects ads shown too often
-async function cgInit(){
-  try{
-    if(!CG_SDK())return;
-    await window.CrazyGames.SDK.init();
-    CG.ready=true;
-    try{window.CrazyGames.SDK.game.loadingStart();}catch(e){}
-    cgMaybeLoadingStop();
-    console.log('[CG] CrazyGames SDK ready · environment:',window.CrazyGames.SDK.environment);
-  }catch(e){console.warn('[CG] SDK init failed — running standalone:',e);}
+function cgInit(){
+  CG.promise=(async()=>{
+    try{
+      if(!CG_SDK())return;
+      await window.CrazyGames.SDK.init();
+      CG.ready=true;
+      try{window.CrazyGames.SDK.game.loadingStart();}catch(e){}
+      cgMaybeLoadingStop();
+      console.log('[CG] CrazyGames SDK ready · environment:',window.CrazyGames.SDK.environment);
+    }catch(e){console.warn('[CG] SDK init failed — running standalone:',e);}
+  })();
+  return CG.promise;
 }
 cgInit();
 function cgMaybeLoadingStop(){
@@ -249,6 +252,24 @@ function cgRequestAd(type,onFinished,onError){ // never throws; always restores 
   }catch(e){cgMute(false);if(onError)onError(e);}
 }
 function cgHappy(){if(CG.ready){try{window.CrazyGames.SDK.game.happytime();}catch(e){}}}
+/* --- cloud save (SDK data module): same API as localStorage, synced to the
+   user's CrazyGames account across devices; guests are migrated automatically
+   on login. Falls back to plain localStorage only when the SDK is absent
+   (standalone builds). Docs: https://docs.crazygames.com/sdk/data/          */
+function cgDataGet(key){
+  if(CG.ready){
+    try{return CG_SDK().data.getItem(key);}
+    catch(e){console.warn('[CG] data.getItem failed:',(e&&e.code)||e);}
+  }
+  try{return localStorage.getItem(key);}catch(e){return null;}
+}
+function cgDataSet(key,val){
+  if(CG.ready){
+    try{CG_SDK().data.setItem(key,val);return;}
+    catch(e){console.warn('[CG] data.setItem failed:',(e&&e.code)||e);}
+  }
+  try{localStorage.setItem(key,val);}catch(e){}
+}
 
 /* ============================================================ TEXTURES (16x16 pixel art) */
 const TEXCACHE={};
@@ -1818,6 +1839,7 @@ const UI={
   showDead(by){
     deadOpen=true;
     cgGameplayStop(); // SDK: game break (death screen)
+    saveProgress(true); // coin penalty must reach the cloud save before anything else
     el('deadTxt').innerHTML=`You were killed by <b>${by}</b>.<br>Lost 10% coins. XP kept.`;
     el('dead').classList.remove('hide');
     if(locked)document.exitPointerLock();
@@ -1915,11 +1937,11 @@ function renderShop(){
         if(CG.adBusy)return;CG.adBusy=true;
         UI.toast('Loading ad...');
         cgRequestAd('rewarded',
-          ()=>{CG.adBusy=false;player.coins+=150;S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
+          ()=>{CG.adBusy=false;player.coins+=150;S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();saveProgress();},
           ()=>{CG.adBusy=false;UI.toast('No ad available right now — try again soon');});
         return; // coins/UI refresh handled in callbacks
       }
-      UI.stats();renderShop();
+      UI.stats();renderShop();saveProgress();
     };
   });
 }
@@ -2013,8 +2035,68 @@ UI.stats();UI.hotbar();UI.board();
 UI.chat('SERVER','Welcome! Kill players to earn XP and coins.',0);
 CG.loaded=true;cgMaybeLoadingStop(); // game is rendered & playable → loading finished
 
+/* ============================================================ CLOUD SAVE (CrazyGames account)
+   Progress (XP, rank, coins, K/D, weapons, armor, arena) is stored through the
+   SDK data module → synced to the player's CrazyGames account on every device
+   they play on. LocalStorage is used only when the SDK is unavailable.       */
+const SAVE_KEY='blockarena_save_v1';
+let lastSavedJSON=null;
+function serializeProgress(){
+  return JSON.stringify({v:1,xp:Math.max(0,Math.round(player.xp)),coins:Math.max(0,Math.round(player.coins)),
+    kills:Math.max(0,player.kills|0),deaths:Math.max(0,player.deaths|0),armor:player.armor|0,sel:player.sel|0,
+    arena:ARENA_I|0,owned:player.owned.map(w=>({t:w.type.id,m:w.mat.id}))});
+}
+function saveProgress(force){
+  try{
+    const s=serializeProgress();
+    if(!force&&s===lastSavedJSON)return;
+    cgDataSet(SAVE_KEY,s);
+    lastSavedJSON=s;
+  }catch(e){console.warn('[CG] save failed',e);}
+}
+function applyProgress(raw){
+  let d=null;try{d=JSON.parse(raw);}catch(e){return false;}
+  if(!d||typeof d!=='object')return false;
+  const num=(v,min,max,def)=>Number.isFinite(+v)?clamp(Math.round(+v),min,max):def;
+  player.xp=num(d.xp,0,1e9,0);
+  player.coins=num(d.coins,0,1e9,120);
+  player.kills=num(d.kills,0,1e6,0);
+  player.deaths=num(d.deaths,0,1e6,0);
+  let r=0;for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)r=i;
+  player.rank=r; // rank derived from XP — no rank-up banner on load
+  player.maxHp=100+player.rank*10;player.hp=player.maxHp;
+  player.armor=num(d.armor,0,ARMORS.length-1,0);
+  const owned=(Array.isArray(d.owned)?d.owned:[]).map(w=>w&&TYPES.find(t=>t.id===w.t)&&MATS.find(m=>m.id===w.m)?{type:TYPES.find(t=>t.id===w.t),mat:MATS.find(m=>m.id===w.m)}:null).filter(Boolean);
+  player.owned=owned.length?owned:[{type:TYPES[0],mat:MATS[0]}];
+  player.sel=clamp(num(d.sel,0,player.owned.length-1,0),0,player.owned.length-1);
+  player.weapon=player.owned[player.sel];
+  // restore arena if it was saved and the rank allows it
+  const ai=num(d.arena,0,Math.min(player.rank,ARENAS.length-1),0);
+  if(ai!==ARENA_I){buildArena(ai);buildViewModel();player.pos.copy(arenaSpot());player.vel.set(0,0,0);spawnNPCs();}
+  else buildViewModel();
+  UI.stats();UI.hotbar();UI.board();
+  lastSavedJSON=serializeProgress();
+  return true;
+}
+function loadProgress(){
+  try{
+    const raw=cgDataGet(SAVE_KEY);
+    if(raw!=null&&applyProgress(raw)){
+      console.log('[CG] progress restored from cloud save');
+      UI.chat('SERVER',`Save loaded · ${RANKS[player.rank].name} · ${player.coins} coins`,player.rank);
+    }
+  }catch(e){console.warn('[CG] load failed',e);}
+}
+CG.promise.then(()=>loadProgress()); // once SDK init settles (account data is preloaded by init)
+
+/* autosave: ~every 0.8s while playing if something changed, instantly on death /
+   purchases / tab close — SDK debounces the actual writes to the account      */
+document.addEventListener('visibilitychange',()=>{if(document.hidden)saveProgress(true);});
+addEventListener('pagehide',()=>saveProgress(true));
+addEventListener('beforeunload',()=>saveProgress(true));
+
 /* tiny e2e hook — inert unless the page URL contains #e2e (used by automated tests) */
-if(location.hash.includes('e2e'))window.__E2E={player,el,UI,SHOP_POS,kill:()=>UI.showDead('e2e-test'),state:()=>({startOpen,deadOpen,shopOpen})};
+if(location.hash.includes('e2e'))window.__E2E={player,el,UI,SHOP_POS,TYPES,MATS,kill:()=>UI.showDead('e2e-test'),save:()=>saveProgress(true),rawSave:()=>cgDataGet(SAVE_KEY),state:()=>({startOpen,deadOpen,shopOpen})};
 
 let last=now(),boardT=0;
 function loop(){
@@ -2033,7 +2115,7 @@ function loop(){
     updateParticles(dt);
     UI.updatePops(dt);
     boardT+=dt;
-    if(boardT>0.8){boardT=0;UI.board();UI.stats();}
+    if(boardT>0.8){boardT=0;UI.board();UI.stats();saveProgress();} // autosave when progress changed
     // spin the shop block & pulse portals
     world.children.forEach(c=>{if(c.userData.spin)c.rotation.y+=dt*1.1;});
     if(PORTAL_NEXT)PORTAL_NEXT.mesh.material.opacity=.55+Math.sin(t*4)*.25;
