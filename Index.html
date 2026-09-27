@@ -901,6 +901,7 @@ class Fighter{
     if(this.isPlayer){
       S.die();
       player.coins=Math.round(player.coins*0.9);
+      saveProgress();
       UI.showDead(by?by.name:'the void');
     }else{
       if(Math.random()<.5)this.say(pick(CHAT.death));
@@ -1580,6 +1581,66 @@ player.owned=[{type:TYPES[0],mat:MATS[0]}];
 player.weapon=player.owned[0];
 player.sel=0;
 
+const SAVE_KEY='blockArenaProgress.v1';
+let savedArenaIndex=0;
+function saveProgress(){
+  try{
+    const data={
+      version:1,xp:player.xp,coins:player.coins,rank:player.rank,title:player.title,
+      kills:player.kills,deaths:player.deaths,armor:player.armor,
+      owned:player.owned.map(w=>({type:w.type.id,mat:w.mat.id})),
+      selected:player.sel,arena:ARENA_I
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+    return true;
+  }catch(e){
+    console.warn('[Save] Could not save player progress:',e);
+    return false;
+  }
+}
+function loadProgress(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw)return false;
+    const data=JSON.parse(raw);
+    if(!data||data.version!==1)return false;
+    const savedInt=(value,min,max,fallback=min)=>Number.isFinite(value)?clamp(Math.floor(value),min,max):fallback;
+    player.xp=savedInt(data.xp,0,1000000000);
+    player.coins=savedInt(data.coins,0,1000000000,120);
+    player.kills=savedInt(data.kills,0,1000000000);
+    player.deaths=savedInt(data.deaths,0,1000000000);
+    let rank=0;
+    for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)rank=i;
+    player.rank=rank;
+    player.title=rank===RANKS.length-1?MAX_RANK_TITLE:'';
+    player.maxHp=100+rank*10;player.hp=player.maxHp;
+    const armor=savedInt(data.armor,0,ARMORS.length-1);
+    player.armor=ARMORS[armor].rank<=rank?armor:0;
+    const owned=[];
+    if(Array.isArray(data.owned)){
+      for(const item of data.owned.slice(0,6)){
+        if(!item)continue;
+        const type=TYPES.find(t=>t.id===item.type),mat=MATS.find(m=>m.id===item.mat);
+        if(!type||!mat||mat.rank>rank||owned.some(w=>w.type===type&&w.mat===mat))continue;
+        owned.push({type,mat});
+      }
+    }
+    player.owned=owned.length?owned:[{type:TYPES[0],mat:MATS[0]}];
+    player.sel=savedInt(data.selected,0,player.owned.length-1);
+    player.weapon=player.owned[player.sel];
+    savedArenaIndex=Math.min(savedInt(data.arena,0,ARENAS.length-1),rank);
+    return true;
+  }catch(e){
+    console.warn('[Save] Could not load player progress:',e);
+    return false;
+  }
+}
+loadProgress();
+addEventListener('pagehide',saveProgress);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden')saveProgress();
+});
+
 let fighters=[player];
 
 function spawnNPCs(){
@@ -1663,7 +1724,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyE')toggleShop();
   if(e.code==='KeyM'){sndOn=!sndOn;UI.toast('Sound '+(sndOn?'ON':'OFF'));}
   if(e.code==='KeyC'&&!wasDown&&!player.dead)player.crouchSignal();
-  if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();}}
+  if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();saveProgress();}}
 });
 addEventListener('keyup',e=>{if(e.code==='ShiftLeft'||e.code==='ShiftRight')return;keys[e.code]=false;});
 renderer.domElement.addEventListener('mousedown',e=>{
@@ -1756,8 +1817,8 @@ const UI={
       const d=document.createElement('div');
       d.className='slot'+(i===player.sel?' sel':'');
       d.innerHTML=`<span style="color:#${w.mat.col.toString(16).padStart(6,'0')}">${w.mat.name}<br>${w.type.name}</span><small>${i+1}</small>`;
-      d.addEventListener('touchstart',e=>{e.preventDefault();player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();},{passive:false});
-      d.addEventListener('click',()=>{player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();});
+      d.addEventListener('touchstart',e=>{e.preventDefault();player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();saveProgress();},{passive:false});
+      d.addEventListener('click',()=>{player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();saveProgress();});
       b.appendChild(d);
     });
   },
@@ -1849,6 +1910,7 @@ function checkRank(){
   }
   player.maxHp=100+player.rank*10;
   UI.stats();
+  saveProgress();
 }
 function travel(dir){
   const i=ARENA_I+dir;
@@ -1861,6 +1923,7 @@ function travel(dir){
   UI.banner('ENTERED '+ARENA.name,`${fighters.length-1} players online · rewards x${ARENA.reward}`);
   UI.stats();UI.hotbar();
   S.lvl();
+  saveProgress();
 }
 
 /* ---------- shop ---------- */
@@ -1928,10 +1991,11 @@ function renderShop(){
         if(CG.adBusy)return;CG.adBusy=true;
         UI.toast('Loading ad...');
         cgRequestAd('rewarded',
-          ()=>{CG.adBusy=false;player.coins+=150;S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
+          ()=>{CG.adBusy=false;player.coins+=150;saveProgress();S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
           ()=>{CG.adBusy=false;UI.toast('No ad available right now — try again soon');});
         return; // coins/UI refresh handled in callbacks
       }
+      saveProgress();
       UI.stats();renderShop();
     };
   });
@@ -2018,11 +2082,12 @@ function updatePlayer(dt){
 }
 
 /* ============================================================ MAIN LOOP */
-buildArena(0);
+buildArena(savedArenaIndex);
 player.pos.copy(arenaSpot());
 spawnNPCs();
 UI.stats();UI.hotbar();UI.board();
 UI.chat('SERVER','Welcome! Kill players to earn XP and coins.',0);
+saveProgress();
 CG.loaded=true;cgMaybeLoadingStop(); // game is rendered & playable → loading finished
 
 /* tiny e2e hook — inert unless the page URL contains #e2e (used by automated tests) */
