@@ -84,9 +84,7 @@ ul{padding-left:18px}
 #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.5)}
 .mbtn{position:absolute;border-radius:50%;background:rgba(0,0,0,.4);border:3px solid rgba(255,255,255,.35);color:#fff;font:bold 12px "Courier New",monospace;display:flex;align-items:center;justify-content:center;pointer-events:auto;text-align:center;line-height:1.1}
 .mbtn:active,.mbtn.on{background:rgba(255,255,255,.35)}
-#bAtk{right:20px;bottom:26px;width:104px;height:104px;font-size:15px}
-#bJmp{right:132px;bottom:40px;width:72px;height:72px}
-#bSpr{right:26px;bottom:142px;width:68px;height:68px}
+#bJmp{right:20px;bottom:26px;width:104px;height:104px;font-size:15px}
 #bBlk{right:112px;bottom:150px;width:64px;height:64px}
 #bShop{right:16px;top:120px;width:62px;height:62px;border-radius:8px}
 #bCrouch{left:150px;bottom:32px;width:60px;height:60px;font-size:11px}
@@ -119,9 +117,7 @@ ul{padding-left:18px}
 
 <div id="mob">
   <div id="stick"><div id="knob"></div></div>
-  <div class="mbtn" id="bAtk">ATTACK</div>
   <div class="mbtn" id="bJmp">JUMP</div>
-  <div class="mbtn" id="bSpr">SPRINT</div>
   <div class="mbtn" id="bBlk">BLOCK</div>
   <div class="mbtn" id="bShop">SHOP</div>
   <div class="mbtn" id="bCrouch">CROUCH</div>
@@ -135,12 +131,12 @@ ul{padding-left:18px}
     <p>NOOB → PRO → ELITE → MASTER → LEGEND. Each rank unlocks the next arena portal and better weapon materials.</p>
     <h2>PC CONTROLS</h2>
     <ul>
-      <li>WASD move · SHIFT sprint · SPACE jump</li>
+      <li>WASD move (auto-sprint) · SPACE jump</li>
       <li>Mouse look · LEFT CLICK attack · RIGHT CLICK block</li>
       <li>1-9 switch weapon · E shop (near gold block) · TAB board · ESC release mouse</li>
     </ul>
     <h2>MOBILE CONTROLS</h2>
-    <ul><li>Left stick move · drag right side to look · buttons for attack / jump / sprint / block / shop</li></ul>
+    <ul><li>Left stick move · drag right side to look · tap right side to attack · buttons for jump / block / shop / crouch</li></ul>
     <h2>TIPS</h2>
     <ul><li>Jump-hit for crits (+50% dmg). Sprint-hit for big knockback.</li>
     <li>The whole arena is live PvP — use cover and retreat when hurt.</li>
@@ -1648,7 +1644,7 @@ buildViewModel();
 /* ============================================================ INPUT */
 const keys={};
 let MOBILE=matchMedia('(pointer: coarse)').matches||('ontouchstart' in window && innerWidth<1200);
-const input={mx:0,mz:0,look:{x:0,y:0},attack:false,block:false,jump:false,sprint:false};
+const input={mx:0,mz:0,look:{x:0,y:0},attack:false,block:false,jump:false};
 let locked=false;
 
 const mobEl=document.getElementById('mob');
@@ -1658,6 +1654,7 @@ addEventListener('touchstart',()=>{if(!MOBILE){MOBILE=true;enableMobile();}},{on
 
 /* ---- PC ---- */
 addEventListener('keydown',e=>{
+  if(e.code==='ShiftLeft'||e.code==='ShiftRight')return;
   if(e.code==='Tab')e.preventDefault();
   const wasDown=keys[e.code];
   keys[e.code]=true;
@@ -1666,7 +1663,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyC'&&!wasDown&&!player.dead)player.crouchSignal();
   if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();}}
 });
-addEventListener('keyup',e=>{keys[e.code]=false;});
+addEventListener('keyup',e=>{if(e.code==='ShiftLeft'||e.code==='ShiftRight')return;keys[e.code]=false;});
 renderer.domElement.addEventListener('mousedown',e=>{
   if(MOBILE)return;
   if(!locked&&!shopOpen&&!startOpen&&!deadOpen){renderer.domElement.requestPointerLock();return;}
@@ -1684,7 +1681,8 @@ addEventListener('mousemove',e=>{
 
 /* ---- MOBILE ---- */
 const stick=document.getElementById('stick'),knob=document.getElementById('knob');
-let stickId=null,lookId=null,lastLook={x:0,y:0};
+let stickId=null,lookId=null,lastLook={x:0,y:0},tapCandidate=null;
+const TAP_MOVE_THRESHOLD=14;
 stick.addEventListener('touchstart',e=>{
   e.preventDefault();const t=e.changedTouches[0];stickId=t.identifier;
   moveKnob(t);
@@ -1697,12 +1695,12 @@ function moveKnob(t){
   if(d>max){dx*=max/d;dy*=max/d;}
   knob.style.transform=`translate(${dx}px,${dy}px)`;
   input.mx=dx/max;input.mz=dy/max;
-  if(Math.hypot(input.mx,input.mz)>0.82)input.sprint=true;
 }
 addEventListener('touchmove',e=>{
   for(const t of e.changedTouches){
     if(t.identifier===stickId){moveKnob(t);e.preventDefault();}
     else if(t.identifier===lookId){
+      if(tapCandidate&&tapCandidate.id===t.identifier&&Math.hypot(t.clientX-tapCandidate.x,t.clientY-tapCandidate.y)>TAP_MOVE_THRESHOLD)tapCandidate.moved=true;
       player.yaw-=(t.clientX-lastLook.x)*0.0055;
       player.pitch=clamp(player.pitch-(t.clientY-lastLook.y)*0.0055,-1.5,1.5);
       lastLook.x=t.clientX;lastLook.y=t.clientY;e.preventDefault();
@@ -1711,14 +1709,21 @@ addEventListener('touchmove',e=>{
 },{passive:false});
 function endTouch(e){
   for(const t of e.changedTouches){
-    if(t.identifier===stickId){stickId=null;input.mx=input.mz=0;input.sprint=false;knob.style.transform='';}
-    if(t.identifier===lookId)lookId=null;
+    if(t.identifier===stickId){stickId=null;input.mx=input.mz=0;knob.style.transform='';}
+    if(t.identifier===lookId){
+      const tap=tapCandidate;
+      lookId=null;tapCandidate=null;
+      if(e.type==='touchend'&&tap&&tap.id===t.identifier&&!tap.moved&&!player.dead&&!startOpen&&!shopOpen&&!deadOpen)player.attack();
+    }
   }
 }
 addEventListener('touchend',endTouch);addEventListener('touchcancel',endTouch);
 renderer.domElement.addEventListener('touchstart',e=>{
   for(const t of e.changedTouches){
-    if(lookId===null&&t.clientX>innerWidth*0.32){lookId=t.identifier;lastLook.x=t.clientX;lastLook.y=t.clientY;}
+    if(lookId===null&&t.clientX>innerWidth*0.32){
+      lookId=t.identifier;lastLook.x=t.clientX;lastLook.y=t.clientY;
+      tapCandidate=t.clientX>innerWidth*0.5?{id:t.identifier,x:t.clientX,y:t.clientY,moved:false}:null;
+    }
   }
 },{passive:true});
 function holdBtn(id,on,off){
@@ -1727,11 +1732,8 @@ function holdBtn(id,on,off){
   const end=e=>{e.preventDefault();el.classList.remove('on');off&&off();};
   el.addEventListener('touchend',end);el.addEventListener('touchcancel',end);
 }
-holdBtn('bAtk',()=>input.attack=true,()=>input.attack=false);
 holdBtn('bBlk',()=>input.block=true,()=>input.block=false);
 holdBtn('bJmp',()=>input.jump=true,()=>input.jump=false);
-const sprBtn=document.getElementById('bSpr');
-sprBtn.addEventListener('touchstart',e=>{e.preventDefault();input.sprint=!input.sprint;sprBtn.classList.toggle('on',input.sprint);},{passive:false});
 document.getElementById('bShop').addEventListener('touchstart',e=>{e.preventDefault();toggleShop();},{passive:false});
 document.getElementById('bCrouch').addEventListener('touchstart',e=>{e.preventDefault();if(!player.dead)player.crouchSignal();},{passive:false});
 
@@ -1960,14 +1962,13 @@ function updatePlayer(dt){
     let f=0,s=0;
     if(keys.KeyW)f+=1;if(keys.KeyS)f-=1;if(keys.KeyA)s-=1;if(keys.KeyD)s+=1;
     wx=fx*f+rx*s;wz=fz*f+rz*s;
-    player.sprinting=!!(keys.ShiftLeft||keys.ShiftRight)&&f>0;
     if(keys.Space)player.jump();
   }else{
     const f=-input.mz,s=input.mx;
     wx=fx*f+rx*s;wz=fz*f+rz*s;
-    player.sprinting=input.sprint&&(Math.abs(f)+Math.abs(s))>0.3;
     if(input.jump)player.jump();
   }
+  player.sprinting=Math.hypot(wx,wz)>0.001;
   player.blocking=(!MOBILE?input.block:input.block);
   if(!shopOpen&&!startOpen&&input.attack&&player.atkCd<=0)player.attack();
   if(player.atkCd>0)player.atkCd-=dt;
