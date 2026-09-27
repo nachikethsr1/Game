@@ -98,6 +98,7 @@ ul{padding-left:18px}
   <div id="hurt"></div>
   <div id="stats" class="mc">
     <div id="rankLine">RANK: NOOB</div>
+    <div id="titleLine" style="display:none;font-size:10px;color:#ffd84b;opacity:.9"></div>
     <div id="arenaLine" style="opacity:.8">ARENA: NOOB PIT</div>
     <div id="xpbar"><div id="xpfill"></div></div>
     <div id="xptext" style="font-size:10px;opacity:.75"></div>
@@ -322,6 +323,7 @@ const RANKS=[
   {name:'MASTER',xp:1300, col:'#f0a13c'},
   {name:'LEGEND',xp:2400, col:'#ff5a5a'},
 ];
+const MAX_RANK_TITLE='ARENA CHAMPION';
 const ARENAS=[
   {name:'NOOB PIT',      size:90, npcs:6, tiers:[0,1],hp:100,floor:'grass',   accent:'oak',     wall:'log',      sky:0x8fd0ff,fog:[60,190],reward:1.0},
   {name:'PRO GROUNDS',   size:96, npcs:7, tiers:[1,2],hp:112,floor:'sand',    accent:'sandstone',wall:'sandstone',sky:0xffdf9e,fog:[65,200],reward:1.5},
@@ -1572,7 +1574,7 @@ function aiAct(f,dt){
 
 /* ============================================================ PLAYER */
 const player=new Fighter({isPlayer:true,name:'You',pos:new THREE.Vector3(0,0,0),maxHp:100});
-player.xp=0;player.coins=120;player.rank=0;
+player.xp=0;player.coins=120;player.rank=0;player.title='';
 player.name='YOU';
 player.owned=[{type:TYPES[0],mat:MATS[0]}];
 player.weapon=player.owned[0];
@@ -1762,6 +1764,8 @@ const UI={
   stats(){
     const r=RANKS[player.rank],nx=RANKS[player.rank+1];
     el('rankLine').innerHTML=`RANK: <span style="color:${r.col}">${r.name}</span>`;
+    el('titleLine').textContent=player.title?'TITLE: '+player.title:'';
+    el('titleLine').style.display=player.title?'block':'none';
     el('arenaLine').textContent='ARENA: '+ARENA.name;
     const base=r.xp,top=nx?nx.xp:r.xp+1;
     el('xpfill').style.width=(nx?clamp((player.xp-base)/(top-base),0,1)*100:100)+'%';
@@ -1831,10 +1835,17 @@ function checkRank(){
   let r=0;
   for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)r=i;
   if(r>player.rank){
+    const reachedMaxRank=r===RANKS.length-1;
     player.rank=r;S.lvl();
     cgHappy(); // SDK: happytime on a feel-good moment
-    UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
-    UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
+    if(reachedMaxRank){
+      player.title=MAX_RANK_TITLE;
+      UI.banner('MAX RANK REACHED!','TITLE UNLOCKED: '+player.title+' · Keep playing if you want!');
+      UI.chat('SERVER',`You earned the title ${player.title}! Max rank reached—keep playing for fun if you want.`,r);
+    }else{
+      UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
+      UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
+    }
   }
   player.maxHp=100+player.rank*10;
   UI.stats();
