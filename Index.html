@@ -47,6 +47,13 @@ canvas{display:block;position:fixed;inset:0}
 /* feeds */
 #kills{position:absolute;right:10px;top:190px;font-size:11px;text-align:right;width:280px}
 #kills div{margin-bottom:3px;background:rgba(0,0,0,.35);padding:2px 5px;display:inline-block}
+#cheatBox{position:absolute;right:10px;top:145px;z-index:12;padding:4px;background:rgba(0,0,0,.7);border:2px solid #555;pointer-events:auto;font-size:10px}
+#cheatForm{display:flex;align-items:center;gap:4px}
+#cheatForm label{color:#ffd84b;font-size:10px}
+#cheatInput{width:112px;min-width:0;padding:4px;background:#171717;border:2px solid #555;color:#fff;font:bold 10px "Courier New",monospace;text-transform:uppercase;user-select:text;-webkit-user-select:text;touch-action:auto}
+#cheatInput::placeholder{color:#999}
+#cheatSubmit{padding:4px 6px;background:#6b9e4f;border:2px solid #2f4d20;color:#fff;font:bold 10px "Courier New",monospace;cursor:pointer}
+#cheatSubmit:active{background:#588240}
 #chat{position:absolute;left:10px;bottom:110px;font-size:11px;width:340px;max-height:150px;overflow:hidden}
 #chat div{margin-bottom:2px;background:rgba(0,0,0,.35);padding:1px 5px;display:inline-block}
 
@@ -84,13 +91,11 @@ ul{padding-left:18px}
 #knob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid rgba(255,255,255,.5)}
 .mbtn{position:absolute;border-radius:50%;background:rgba(0,0,0,.4);border:3px solid rgba(255,255,255,.35);color:#fff;font:bold 12px "Courier New",monospace;display:flex;align-items:center;justify-content:center;pointer-events:auto;text-align:center;line-height:1.1}
 .mbtn:active,.mbtn.on{background:rgba(255,255,255,.35)}
-#bAtk{right:20px;bottom:26px;width:104px;height:104px;font-size:15px}
-#bJmp{right:132px;bottom:40px;width:72px;height:72px}
-#bSpr{right:26px;bottom:142px;width:68px;height:68px}
+#bJmp{right:20px;bottom:26px;width:104px;height:104px;font-size:15px}
 #bBlk{right:112px;bottom:150px;width:64px;height:64px}
 #bShop{right:16px;top:120px;width:62px;height:62px;border-radius:8px}
 #bCrouch{left:150px;bottom:32px;width:60px;height:60px;font-size:11px}
-@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}}
+@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}#cheatBox{top:10px;width:130px;padding:4px}#cheatForm label{display:none}#cheatInput{width:50px;flex:1}}
 </style>
 </head>
 <body>
@@ -100,6 +105,7 @@ ul{padding-left:18px}
   <div id="hurt"></div>
   <div id="stats" class="mc">
     <div id="rankLine">RANK: NOOB</div>
+    <div id="titleLine" style="display:none;font-size:10px;color:#ffd84b;opacity:.9"></div>
     <div id="arenaLine" style="opacity:.8">ARENA: NOOB PIT</div>
     <div id="xpbar"><div id="xpfill"></div></div>
     <div id="xptext" style="font-size:10px;opacity:.75"></div>
@@ -108,6 +114,13 @@ ul{padding-left:18px}
   </div>
   <div id="board" class="mc"></div>
   <div id="kills" class="mc"></div>
+  <div id="cheatBox" class="mc">
+    <form id="cheatForm" autocomplete="off">
+      <label for="cheatInput">CHEAT</label>
+      <input id="cheatInput" type="text" maxlength="24" placeholder="TYPE CODE" autocapitalize="none" autocomplete="off" spellcheck="false">
+      <button id="cheatSubmit" type="submit">GO</button>
+    </form>
+  </div>
   <div id="chat" class="mc"></div>
   <div id="banner" class="mc"></div>
   <div id="toast" class="mc"></div>
@@ -119,9 +132,7 @@ ul{padding-left:18px}
 
 <div id="mob">
   <div id="stick"><div id="knob"></div></div>
-  <div class="mbtn" id="bAtk">ATTACK</div>
   <div class="mbtn" id="bJmp">JUMP</div>
-  <div class="mbtn" id="bSpr">SPRINT</div>
   <div class="mbtn" id="bBlk">BLOCK</div>
   <div class="mbtn" id="bShop">SHOP</div>
   <div class="mbtn" id="bCrouch">CROUCH</div>
@@ -135,12 +146,12 @@ ul{padding-left:18px}
     <p>NOOB → PRO → ELITE → MASTER → LEGEND. Each rank unlocks the next arena portal and better weapon materials.</p>
     <h2>PC CONTROLS</h2>
     <ul>
-      <li>WASD move · SHIFT sprint · SPACE jump</li>
+      <li>WASD move (auto-sprint) · SPACE jump</li>
       <li>Mouse look · LEFT CLICK attack · RIGHT CLICK block</li>
       <li>1-9 switch weapon · E shop (near gold block) · TAB board · ESC release mouse</li>
     </ul>
     <h2>MOBILE CONTROLS</h2>
-    <ul><li>Left stick move · drag right side to look · buttons for attack / jump / sprint / block / shop</li></ul>
+    <ul><li>Left stick move · drag right side to look · tap right side to attack · buttons for jump / block / shop / crouch</li></ul>
     <h2>TIPS</h2>
     <ul><li>Jump-hit for crits (+50% dmg). Sprint-hit for big knockback.</li>
     <li>The whole arena is live PvP — use cover and retreat when hurt.</li>
@@ -326,6 +337,7 @@ const RANKS=[
   {name:'MASTER',xp:1300, col:'#f0a13c'},
   {name:'LEGEND',xp:2400, col:'#ff5a5a'},
 ];
+const MAX_RANK_TITLE='ARENA CHAMPION';
 const ARENAS=[
   {name:'NOOB PIT',      size:90, npcs:6, tiers:[0,1],hp:100,floor:'grass',   accent:'oak',     wall:'log',      sky:0x8fd0ff,fog:[60,190],reward:1.0},
   {name:'PRO GROUNDS',   size:96, npcs:7, tiers:[1,2],hp:112,floor:'sand',    accent:'sandstone',wall:'sandstone',sky:0xffdf9e,fog:[65,200],reward:1.5},
@@ -903,11 +915,13 @@ class Fighter{
     if(this.isPlayer){
       S.die();
       player.coins=Math.round(player.coins*0.9);
+      saveProgress();
       UI.showDead(by?by.name:'the void');
     }else{
       if(Math.random()<.5)this.say(pick(CHAT.death));
       this.respawnT=rnd(2.6,6.0);
     }
+    if(!this.isPlayer&&this.trialIndex!==undefined)checkTrialVictory();
   }
   respawn(){
     this.dead=false;this.hp=this.maxHp;
@@ -1361,7 +1375,7 @@ function aiThink(f){
 function aiAct(f,dt){
   updateMood(f,dt);
   // out-of-combat regen: no damage dealt or taken for 7s -> slowly heal back up
-  if(!f.dead&&f.hp<f.maxHp&&now()-f.lastCombat>7){
+  if(!f.dead&&!f.noRegen&&f.hp<f.maxHp&&now()-f.lastCombat>7){
     f.hp=Math.min(f.maxHp,f.hp+f.maxHp*0.06*dt);
   }
   let wx=0,wz=0,wantJump=false;
@@ -1576,11 +1590,71 @@ function aiAct(f,dt){
 
 /* ============================================================ PLAYER */
 const player=new Fighter({isPlayer:true,name:'You',pos:new THREE.Vector3(0,0,0),maxHp:100});
-player.xp=0;player.coins=120;player.rank=0;
+player.xp=0;player.coins=120;player.rank=0;player.title='';
 player.name='YOU';
 player.owned=[{type:TYPES[0],mat:MATS[0]}];
 player.weapon=player.owned[0];
 player.sel=0;
+
+const SAVE_KEY='blockArenaProgress.v1';
+let savedArenaIndex=0;
+function saveProgress(){
+  try{
+    const data={
+      version:1,xp:player.xp,coins:player.coins,rank:player.rank,title:player.title,
+      kills:player.kills,deaths:player.deaths,armor:player.armor,
+      owned:player.owned.map(w=>({type:w.type.id,mat:w.mat.id})),
+      selected:player.sel,arena:ARENA_I
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+    return true;
+  }catch(e){
+    console.warn('[Save] Could not save player progress:',e);
+    return false;
+  }
+}
+function loadProgress(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw)return false;
+    const data=JSON.parse(raw);
+    if(!data||data.version!==1)return false;
+    const savedInt=(value,min,max,fallback=min)=>Number.isFinite(value)?clamp(Math.floor(value),min,max):fallback;
+    player.xp=savedInt(data.xp,0,1000000000);
+    player.coins=savedInt(data.coins,0,1000000000,120);
+    player.kills=savedInt(data.kills,0,1000000000);
+    player.deaths=savedInt(data.deaths,0,1000000000);
+    let rank=0;
+    for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)rank=i;
+    player.rank=rank;
+    player.title=rank===RANKS.length-1?MAX_RANK_TITLE:'';
+    player.maxHp=100+rank*10;player.hp=player.maxHp;
+    const armor=savedInt(data.armor,0,ARMORS.length-1);
+    player.armor=ARMORS[armor].rank<=rank?armor:0;
+    const owned=[];
+    if(Array.isArray(data.owned)){
+      for(const item of data.owned.slice(0,6)){
+        if(!item)continue;
+        const type=TYPES.find(t=>t.id===item.type),mat=MATS.find(m=>m.id===item.mat);
+        if(!type||!mat||mat.rank>rank||owned.some(w=>w.type===type&&w.mat===mat))continue;
+        owned.push({type,mat});
+      }
+    }
+    player.owned=owned.length?owned:[{type:TYPES[0],mat:MATS[0]}];
+    player.sel=savedInt(data.selected,0,player.owned.length-1);
+    player.weapon=player.owned[player.sel];
+    savedArenaIndex=Math.min(savedInt(data.arena,0,ARENAS.length-1),rank);
+    return true;
+  }catch(e){
+    console.warn('[Save] Could not load player progress:',e);
+    return false;
+  }
+}
+loadProgress();
+addEventListener('pagehide',saveProgress);
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden')saveProgress();
+});
 
 let fighters=[player];
 
@@ -1648,7 +1722,7 @@ buildViewModel();
 /* ============================================================ INPUT */
 const keys={};
 let MOBILE=matchMedia('(pointer: coarse)').matches||('ontouchstart' in window && innerWidth<1200);
-const input={mx:0,mz:0,look:{x:0,y:0},attack:false,block:false,jump:false,sprint:false};
+const input={mx:0,mz:0,look:{x:0,y:0},attack:false,block:false,jump:false};
 let locked=false;
 
 const mobEl=document.getElementById('mob');
@@ -1658,15 +1732,16 @@ addEventListener('touchstart',()=>{if(!MOBILE){MOBILE=true;enableMobile();}},{on
 
 /* ---- PC ---- */
 addEventListener('keydown',e=>{
+  if(e.code==='ShiftLeft'||e.code==='ShiftRight')return;
   if(e.code==='Tab')e.preventDefault();
   const wasDown=keys[e.code];
   keys[e.code]=true;
   if(e.code==='KeyE')toggleShop();
   if(e.code==='KeyM'){sndOn=!sndOn;UI.toast('Sound '+(sndOn?'ON':'OFF'));}
   if(e.code==='KeyC'&&!wasDown&&!player.dead)player.crouchSignal();
-  if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();}}
+  if(/^Digit[1-9]$/.test(e.code)){const i=+e.code.slice(5)-1;if(player.owned[i]){player.sel=i;player.weapon=player.owned[i];buildViewModel();UI.hotbar();saveProgress();}}
 });
-addEventListener('keyup',e=>{keys[e.code]=false;});
+addEventListener('keyup',e=>{if(e.code==='ShiftLeft'||e.code==='ShiftRight')return;keys[e.code]=false;});
 renderer.domElement.addEventListener('mousedown',e=>{
   if(MOBILE)return;
   if(!locked&&!shopOpen&&!startOpen&&!deadOpen){renderer.domElement.requestPointerLock();return;}
@@ -1684,7 +1759,8 @@ addEventListener('mousemove',e=>{
 
 /* ---- MOBILE ---- */
 const stick=document.getElementById('stick'),knob=document.getElementById('knob');
-let stickId=null,lookId=null,lastLook={x:0,y:0};
+let stickId=null,lookId=null,lastLook={x:0,y:0},tapCandidate=null;
+const TAP_MOVE_THRESHOLD=14;
 stick.addEventListener('touchstart',e=>{
   e.preventDefault();const t=e.changedTouches[0];stickId=t.identifier;
   moveKnob(t);
@@ -1697,12 +1773,12 @@ function moveKnob(t){
   if(d>max){dx*=max/d;dy*=max/d;}
   knob.style.transform=`translate(${dx}px,${dy}px)`;
   input.mx=dx/max;input.mz=dy/max;
-  if(Math.hypot(input.mx,input.mz)>0.82)input.sprint=true;
 }
 addEventListener('touchmove',e=>{
   for(const t of e.changedTouches){
     if(t.identifier===stickId){moveKnob(t);e.preventDefault();}
     else if(t.identifier===lookId){
+      if(tapCandidate&&tapCandidate.id===t.identifier&&Math.hypot(t.clientX-tapCandidate.x,t.clientY-tapCandidate.y)>TAP_MOVE_THRESHOLD)tapCandidate.moved=true;
       player.yaw-=(t.clientX-lastLook.x)*0.0055;
       player.pitch=clamp(player.pitch-(t.clientY-lastLook.y)*0.0055,-1.5,1.5);
       lastLook.x=t.clientX;lastLook.y=t.clientY;e.preventDefault();
@@ -1711,14 +1787,21 @@ addEventListener('touchmove',e=>{
 },{passive:false});
 function endTouch(e){
   for(const t of e.changedTouches){
-    if(t.identifier===stickId){stickId=null;input.mx=input.mz=0;input.sprint=false;knob.style.transform='';}
-    if(t.identifier===lookId)lookId=null;
+    if(t.identifier===stickId){stickId=null;input.mx=input.mz=0;knob.style.transform='';}
+    if(t.identifier===lookId){
+      const tap=tapCandidate;
+      lookId=null;tapCandidate=null;
+      if(e.type==='touchend'&&tap&&tap.id===t.identifier&&!tap.moved&&!player.dead&&!startOpen&&!shopOpen&&!deadOpen)player.attack();
+    }
   }
 }
 addEventListener('touchend',endTouch);addEventListener('touchcancel',endTouch);
 renderer.domElement.addEventListener('touchstart',e=>{
   for(const t of e.changedTouches){
-    if(lookId===null&&t.clientX>innerWidth*0.32){lookId=t.identifier;lastLook.x=t.clientX;lastLook.y=t.clientY;}
+    if(lookId===null&&t.clientX>innerWidth*0.32){
+      lookId=t.identifier;lastLook.x=t.clientX;lastLook.y=t.clientY;
+      tapCandidate=t.clientX>innerWidth*0.5?{id:t.identifier,x:t.clientX,y:t.clientY,moved:false}:null;
+    }
   }
 },{passive:true});
 function holdBtn(id,on,off){
@@ -1727,11 +1810,8 @@ function holdBtn(id,on,off){
   const end=e=>{e.preventDefault();el.classList.remove('on');off&&off();};
   el.addEventListener('touchend',end);el.addEventListener('touchcancel',end);
 }
-holdBtn('bAtk',()=>input.attack=true,()=>input.attack=false);
 holdBtn('bBlk',()=>input.block=true,()=>input.block=false);
 holdBtn('bJmp',()=>input.jump=true,()=>input.jump=false);
-const sprBtn=document.getElementById('bSpr');
-sprBtn.addEventListener('touchstart',e=>{e.preventDefault();input.sprint=!input.sprint;sprBtn.classList.toggle('on',input.sprint);},{passive:false});
 document.getElementById('bShop').addEventListener('touchstart',e=>{e.preventDefault();toggleShop();},{passive:false});
 document.getElementById('bCrouch').addEventListener('touchstart',e=>{e.preventDefault();if(!player.dead)player.crouchSignal();},{passive:false});
 
@@ -1752,14 +1832,16 @@ const UI={
       const d=document.createElement('div');
       d.className='slot'+(i===player.sel?' sel':'');
       d.innerHTML=`<span style="color:#${w.mat.col.toString(16).padStart(6,'0')}">${w.mat.name}<br>${w.type.name}</span><small>${i+1}</small>`;
-      d.addEventListener('touchstart',e=>{e.preventDefault();player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();},{passive:false});
-      d.addEventListener('click',()=>{player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();});
+      d.addEventListener('touchstart',e=>{e.preventDefault();player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();saveProgress();},{passive:false});
+      d.addEventListener('click',()=>{player.sel=i;player.weapon=w;buildViewModel();UI.hotbar();saveProgress();});
       b.appendChild(d);
     });
   },
   stats(){
     const r=RANKS[player.rank],nx=RANKS[player.rank+1];
     el('rankLine').innerHTML=`RANK: <span style="color:${r.col}">${r.name}</span>`;
+    el('titleLine').textContent=player.title?'TITLE: '+player.title:'';
+    el('titleLine').style.display=player.title?'block':'none';
     el('arenaLine').textContent='ARENA: '+ARENA.name;
     const base=r.xp,top=nx?nx.xp:r.xp+1;
     el('xpfill').style.width=(nx?clamp((player.xp-base)/(top-base),0,1)*100:100)+'%';
@@ -1829,13 +1911,21 @@ function checkRank(){
   let r=0;
   for(let i=0;i<RANKS.length;i++)if(player.xp>=RANKS[i].xp)r=i;
   if(r>player.rank){
+    const reachedMaxRank=r===RANKS.length-1;
     player.rank=r;S.lvl();
     cgHappy(); // SDK: happytime on a feel-good moment
-    UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
-    UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
+    if(reachedMaxRank){
+      player.title=MAX_RANK_TITLE;
+      UI.banner('MAX RANK REACHED!','TITLE UNLOCKED: '+player.title+' · Keep playing if you want!');
+      UI.chat('SERVER',`You earned the title ${player.title}! Max rank reached—keep playing for fun if you want.`,r);
+    }else{
+      UI.banner('RANK UP → '+RANKS[r].name,'New gear unlocked · new arena portal open');
+      UI.chat('SERVER',`YOU ranked up to ${RANKS[r].name}!`,r);
+    }
   }
   player.maxHp=100+player.rank*10;
   UI.stats();
+  saveProgress();
 }
 function travel(dir){
   const i=ARENA_I+dir;
@@ -1848,7 +1938,172 @@ function travel(dir){
   UI.banner('ENTERED '+ARENA.name,`${fighters.length-1} players online · rewards x${ARENA.reward}`);
   UI.stats();UI.hotbar();
   S.lvl();
+  saveProgress();
 }
+/* ==================== FINAL TRIAL ==================== */
+const TRIAL={
+  active:false,
+  defeated:JSON.parse(localStorage.getItem('blockArenaTrialWins')||'[]'),
+  fighters:[]
+};
+
+const LEGENDARY=[
+  {name:'VoidWalker',arch:'destroyer',type:'mace',mat:'diamond',hp:190,ability:'knockback'},
+  {name:'ShadowStriker',arch:'revenger',type:'spear',mat:'gold',hp:165,ability:'speed'},
+  {name:'IronTitan',arch:'builder',type:'axe',mat:'iron',hp:210,ability:'block'},
+  {name:'BladeDancer',arch:'social',type:'sword',mat:'diamond',hp:175,ability:'strafe'},
+  {name:'GrimReaper',arch:'destroyer',type:'axe',mat:'diamond',hp:185,ability:'crit'},
+  {name:'StoneGuardian',arch:'builder',type:'mace',mat:'iron',hp:230,ability:'tank'},
+  {name:'FrostBite',arch:'zen',type:'sword',mat:'gold',hp:170,ability:'slow'},
+  {name:'ChaosLord',arch:null,type:'spear',mat:'diamond',hp:180,ability:'random'},
+  {name:'SilentKiller',arch:'revenger',type:'spear',mat:'iron',hp:160,ability:'stealth'},
+  {name:'ARENA KING',arch:'destroyer',type:'mace',mat:'diamond',hp:260,ability:'boss'}
+];
+
+function startFinalTrial(){
+  if(player.rank<RANKS.length-1)return UI.toast('Reach LEGEND rank first!');
+  if(TRIAL.active)return;
+
+  TRIAL.active=true;
+  buildArena(4); // Use Legend Nether arena
+  player.pos.set(0,0,HALF-8);player.vel.set(0,0,0);player.hp=player.maxHp;
+
+  // Remove all NPCs
+  fighters=[player];
+
+  // Spawn 10 Legendary Fighters in semicircle
+  LEGENDARY.forEach((L,i)=>{
+    const ang=Math.PI+(i/9)*Math.PI; // Semicircle facing player
+    const R=HALF*0.6;
+    const f=new Fighter({
+      pos:new THREE.Vector3(Math.cos(ang)*R,0,Math.sin(ang)*R),
+      maxHp:L.hp,rank:4,
+      weapon:{type:TYPES.find(t=>t.id===L.type),mat:MATS.find(m=>m.id===L.mat)},
+      coins:0,armor:4,
+      level:NPC_LEVELS[4], // Elite
+      archetype:ARCHETYPES.find(a=>a&&a.id===L.arch)||null
+    });
+    f.name=L.name;
+    f.trialAbility=L.ability;
+    f.trialIndex=i;
+    f.noRegen=true; // KEY: No HP regen
+    fighters.push(f);
+    TRIAL.fighters.push(f);
+  });
+
+  UI.banner('⚔️ THE FINAL TRIAL ⚔️','Defeat all 10 Legendary Fighters — They do NOT regenerate HP');
+  UI.chat('SERVER','THE FINAL TRIAL BEGINS! No enemy respawns. Good luck, Champion.',4);
+  UI.stats();
+}
+
+function checkTrialVictory(){
+  if(!TRIAL.active)return;
+  const alive=TRIAL.fighters.filter(f=>!f.dead);
+  if(alive.length===0){
+    TRIAL.active=false;
+    TRIAL.defeated.push(Date.now());
+    localStorage.setItem('blockArenaTrialWins',JSON.stringify(TRIAL.defeated));
+    showVictoryScreen();
+  }else{
+    UI.banner(`${10-alive.length}/10 DEFEATED`,'Keep fighting! They cannot regenerate HP!');
+  }
+}
+
+/* ==================== VICTORY + VOTING ==================== */
+const VOTE_KEY='blockArenaVotes';
+const VOTE_GOAL=10;
+
+function getVotes(){return parseInt(localStorage.getItem(VOTE_KEY))||4;}
+function hasVoted(){return localStorage.getItem('blockArenaVoted')==='1';}
+
+function showVictoryScreen(){
+  cgGameplayStop();
+  const votes=getVotes();
+  const voted=hasVoted();
+
+  const ov=document.createElement('div');
+  ov.className='ov';
+  ov.id='victory';
+  ov.innerHTML=`
+    <div class="panel" style="text-align:center;max-width:480px;">
+      <h1 style="color:#ffd84b;font-size:32px;margin-bottom:8px;">🏆 CHAMPION 🏆</h1>
+      <p style="font-size:14px;margin-bottom:15px;">
+        You conquered <b>THE FINAL TRIAL</b>
+
+        All 10 Legendary Fighters have fallen.
+      </p>
+      <div style="background:#1a1a1a;border:2px solid #ffd84b;padding:12px;margin:15px 0;">
+        <h2 style="color:#ffd84b;margin-bottom:8px;">🌍 OPEN WORLD EXPANSION</h2>
+        <p style="margin-bottom:10px;font-size:12px;">Vote to make it happen!</p>
+        <div style="background:#333;height:24px;position:relative;margin-bottom:8px;border:1px solid #555;">
+          <div id="voteFill" style="background:linear-gradient(90deg,#ffd84b,#ff9d00);height:100%;width:${(votes/VOTE_GOAL)*100}%;transition:width .5s;"></div>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-weight:bold;font-size:12px;" id="voteText">${votes} / ${VOTE_GOAL}</div>
+        </div>
+        <button class="btn" id="voteBtn" style="background:#ffd84b;color:#000;border-color:#b8952e;${voted?'opacity:.5;pointer-events:none;':''}">
+          ${voted?'✓ VOTED':'🔥 VOTE NOW 🔥'}
+        </button>
+        <p id="voteMsg" style="margin-top:8px;font-size:11px;color:#7ee36b;">
+          ${votes>=VOTE_GOAL?'🎉 GOAL REACHED! Open World confirmed!':'Every vote counts! Share with friends!'}
+        </p>
+      </div>
+      <button class="btn" id="eternalBtn">⚔ CONTINUE (ETERNAL MODE)</button>
+      <button class="btn grey" id="menuBtn2">MAIN MENU</button>
+    </div>`;
+  document.body.appendChild(ov);
+
+  document.getElementById('voteBtn').onclick=()=>{
+    if(hasVoted())return;
+    localStorage.setItem('blockArenaVoted','1');
+    const nv=Math.min(getVotes()+1,VOTE_GOAL);
+    localStorage.setItem(VOTE_KEY,nv);
+    document.getElementById('voteFill').style.width=(nv/VOTE_GOAL)*100+'%';
+    document.getElementById('voteText').textContent=`${nv} / ${VOTE_GOAL}`;
+    document.getElementById('voteBtn').textContent='✓ VOTED';
+    document.getElementById('voteBtn').style.opacity='.5';
+    document.getElementById('voteBtn').style.pointerEvents='none';
+    if(nv>=VOTE_GOAL){
+      document.getElementById('voteMsg').innerHTML='🎉 <b>GOAL REACHED!</b> Open World is confirmed!<br>Follow for dev updates!';
+      S.lvl();cgHappy();
+    }else{
+      UI.toast(`Vote counted! ${VOTE_GOAL-nv} more needed!`);
+    }
+  };
+
+  document.getElementById('eternalBtn').onclick=()=>{
+    ov.remove();
+    cgGameplayStart();
+    spawnNPCs(); // Back to normal
+    UI.banner('ETERNAL MODE','Free PvP — Keep fighting, Champion!');
+  };
+
+  document.getElementById('menuBtn2').onclick=()=>{
+    location.reload();
+  };
+
+  if(locked)document.exitPointerLock();
+  S.lvl();cgHappy();
+}
+
+el('cheatForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const field=el('cheatInput');
+  const code=field.value.trim().toLowerCase();
+  field.value='';
+  if(code==='trial'){startFinalTrial();return;}
+  if(code!=='finish')return UI.toast('Invalid cheat code');
+
+  player.xp=Math.max(player.xp,RANKS[RANKS.length-1].xp);
+  checkRank();
+  player.title=MAX_RANK_TITLE;
+  player.hp=player.maxHp;
+  const finalArena=ARENAS.length-1;
+  if(ARENA_I<finalArena)travel(finalArena-ARENA_I);
+  UI.stats();
+  saveProgress();
+  UI.banner('CONGRATULATIONS!','FINISH CODE ACCEPTED · FINAL ARENA · MAX RANK · FULL HP');
+  UI.chat('SERVER','Congratulations! You reached the final arena at max rank with full HP.',player.rank);
+  field.blur();
+});
 
 /* ---------- shop ---------- */
 let shopOpen=false,startOpen=true,deadOpen=false;
@@ -1915,10 +2170,11 @@ function renderShop(){
         if(CG.adBusy)return;CG.adBusy=true;
         UI.toast('Loading ad...');
         cgRequestAd('rewarded',
-          ()=>{CG.adBusy=false;player.coins+=150;S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
+          ()=>{CG.adBusy=false;player.coins+=150;saveProgress();S.buy();UI.toast('+150 ⛃ — thanks for supporting the arena!');UI.stats();renderShop();},
           ()=>{CG.adBusy=false;UI.toast('No ad available right now — try again soon');});
         return; // coins/UI refresh handled in callbacks
       }
+      saveProgress();
       UI.stats();renderShop();
     };
   });
@@ -1960,14 +2216,13 @@ function updatePlayer(dt){
     let f=0,s=0;
     if(keys.KeyW)f+=1;if(keys.KeyS)f-=1;if(keys.KeyA)s-=1;if(keys.KeyD)s+=1;
     wx=fx*f+rx*s;wz=fz*f+rz*s;
-    player.sprinting=!!(keys.ShiftLeft||keys.ShiftRight)&&f>0;
     if(keys.Space)player.jump();
   }else{
     const f=-input.mz,s=input.mx;
     wx=fx*f+rx*s;wz=fz*f+rz*s;
-    player.sprinting=input.sprint&&(Math.abs(f)+Math.abs(s))>0.3;
     if(input.jump)player.jump();
   }
+  player.sprinting=Math.hypot(wx,wz)>0.001;
   player.blocking=(!MOBILE?input.block:input.block);
   if(!shopOpen&&!startOpen&&input.attack&&player.atkCd<=0)player.attack();
   if(player.atkCd>0)player.atkCd-=dt;
@@ -2006,11 +2261,12 @@ function updatePlayer(dt){
 }
 
 /* ============================================================ MAIN LOOP */
-buildArena(0);
+buildArena(savedArenaIndex);
 player.pos.copy(arenaSpot());
 spawnNPCs();
 UI.stats();UI.hotbar();UI.board();
 UI.chat('SERVER','Welcome! Kill players to earn XP and coins.',0);
+saveProgress();
 CG.loaded=true;cgMaybeLoadingStop(); // game is rendered & playable → loading finished
 
 /* tiny e2e hook — inert unless the page URL contains #e2e (used by automated tests) */
@@ -2024,7 +2280,7 @@ function loop(){
     updatePlayer(dt);
     for(const f of fighters){
       if(f.isPlayer)continue;
-      if(f.dead){f.respawnT-=dt;if(f.respawnT<=0)f.respawn();continue;}
+      if(f.dead){if(f.trialIndex!==undefined)continue;f.respawnT-=dt;if(f.respawnT<=0)f.respawn();continue;}
       f.think-=dt;
       if(f.think<=0)aiThink(f);
       aiAct(f,dt);
