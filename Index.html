@@ -182,11 +182,11 @@ ul{padding-left:18px}
 <script type="module">
 import * as THREE from 'three';
 window.THREE=THREE;
-// game code is split into two classic scripts (file size limits); classic scripts share
+// game code is split into three classic scripts (file size limits); classic scripts share
 // top-level const/let scope, and we load them strictly in order
 function __load(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.body.appendChild(s);});}
-try{await __load('./game1.js');await __load('./game2.js');}
-catch(e){document.body.insertAdjacentHTML('beforeend','<div style="position:fixed;inset:0;background:#200;color:#f66;display:flex;align-items:center;justify-content:center;font:16px monospace;z-index:99">Failed to load game files — check that game1.js and game2.js are deployed next to Index.html</div>');console.error(e);}
+try{await __load('./game1.js');await __load('./game2.js');await __load('./game3.js');}
+catch(e){document.body.insertAdjacentHTML('beforeend','<div style="position:fixed;inset:0;background:#200;color:#f66;display:flex;align-items:center;justify-content:center;font:16px monospace;z-index:99">Failed to load game files — check that game1.js, game2.js and game3.js are deployed next to Index.html</div>');console.error(e);}
 </script>
 </body>
 </html>
