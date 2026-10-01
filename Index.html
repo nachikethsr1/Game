@@ -214,7 +214,7 @@ async function cgInit(){
     console.log('[CG] CrazyGames SDK ready · environment:',window.CrazyGames.SDK.environment);
   }catch(e){console.warn('[CG] SDK init failed — running standalone:',e);}
 }
-cgInit();
+await cgInit(); // initialize CrazyGames Data before loading saved progress
 function cgMaybeLoadingStop(){
   if(CG.ready&&CG.loaded&&!CG.loadingStopped){
     CG.loadingStopped=true;
@@ -246,6 +246,25 @@ function cgRequestAd(type,onFinished,onError){ // never throws; always restores 
   }catch(e){cgMute(false);if(onError)onError(e);}
 }
 function cgHappy(){if(CG.ready){try{window.CrazyGames.SDK.game.happytime();}catch(e){}}}
+function cgData(){
+  if(!CG.ready)return null;
+  const sdk=CG_SDK();
+  return sdk&&sdk.data?sdk.data:null;
+}
+function cgDataGet(key){
+  try{
+    const data=cgData();
+    return data?data.getItem(key):null;
+  }catch(e){console.warn('[Save] Could not read CrazyGames data:',e);return null;}
+}
+function cgDataSet(key,value){
+  try{
+    const data=cgData();
+    if(!data)return false;
+    data.setItem(key,String(value));
+    return true;
+  }catch(e){console.warn('[Save] Could not write CrazyGames data:',e);return false;}
+}
 
 /* ============================================================ TEXTURES (16x16 pixel art) */
 const TEXCACHE={};
@@ -1598,8 +1617,7 @@ function saveProgress(){
       owned:player.owned.map(w=>({type:w.type.id,mat:w.mat.id})),
       selected:player.sel,arena:ARENA_I
     };
-    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
-    return true;
+    return cgDataSet(SAVE_KEY,JSON.stringify(data));
   }catch(e){
     console.warn('[Save] Could not save player progress:',e);
     return false;
@@ -1607,7 +1625,7 @@ function saveProgress(){
 }
 function loadProgress(){
   try{
-    const raw=localStorage.getItem(SAVE_KEY);
+    const raw=cgDataGet(SAVE_KEY);
     if(!raw)return false;
     const data=JSON.parse(raw);
     if(!data||data.version!==1)return false;
@@ -1933,9 +1951,19 @@ function travel(dir){
   saveProgress();
 }
 /* ==================== FINAL TRIAL ==================== */
+const TRIAL_WINS_KEY='blockArenaTrialWins';
+function loadTrialWins(){
+  try{
+    const wins=JSON.parse(cgDataGet(TRIAL_WINS_KEY)||'[]');
+    return Array.isArray(wins)?wins:[];
+  }catch(e){
+    console.warn('[Save] Could not load trial wins:',e);
+    return [];
+  }
+}
 const TRIAL={
   active:false,
-  defeated:JSON.parse(localStorage.getItem('blockArenaTrialWins')||'[]'),
+  defeated:loadTrialWins(),
   fighters:[]
 };
 
@@ -2032,7 +2060,7 @@ function checkTrialVictory(){
   const alive=TRIAL.fighters.filter(f=>!f.dead);
   if(alive.length===0){
     TRIAL.defeated.push(Date.now());
-    localStorage.setItem('blockArenaTrialWins',JSON.stringify(TRIAL.defeated));
+    cgDataSet(TRIAL_WINS_KEY,JSON.stringify(TRIAL.defeated));
     showVictoryScreen();
   }else{
     UI.banner(`${10-alive.length}/10 DEFEATED`,'Keep fighting! They cannot regenerate HP!');
@@ -2041,10 +2069,11 @@ function checkTrialVictory(){
 
 /* ==================== VICTORY + VOTING ==================== */
 const VOTE_KEY='blockArenaVotes';
+const VOTED_KEY='blockArenaVoted';
 const VOTE_GOAL=10;
 
-function getVotes(){return parseInt(localStorage.getItem(VOTE_KEY))||4;}
-function hasVoted(){return localStorage.getItem('blockArenaVoted')==='1';}
+function getVotes(){return parseInt(cgDataGet(VOTE_KEY),10)||4;}
+function hasVoted(){return cgDataGet(VOTED_KEY)==='1';}
 
 function showVictoryScreen(){
   cgGameplayStop();
@@ -2083,9 +2112,9 @@ function showVictoryScreen(){
 
   document.getElementById('voteBtn').onclick=()=>{
     if(hasVoted())return;
-    localStorage.setItem('blockArenaVoted','1');
+    cgDataSet(VOTED_KEY,'1');
     const nv=Math.min(getVotes()+1,VOTE_GOAL);
-    localStorage.setItem(VOTE_KEY,nv);
+    cgDataSet(VOTE_KEY,nv);
     document.getElementById('voteFill').style.width=(nv/VOTE_GOAL)*100+'%';
     document.getElementById('voteText').textContent=`${nv} / ${VOTE_GOAL}`;
     document.getElementById('voteBtn').textContent='✓ VOTED';
