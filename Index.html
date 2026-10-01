@@ -47,13 +47,6 @@ canvas{display:block;position:fixed;inset:0}
 /* feeds */
 #kills{position:absolute;right:10px;top:190px;font-size:11px;text-align:right;width:280px}
 #kills div{margin-bottom:3px;background:rgba(0,0,0,.35);padding:2px 5px;display:inline-block}
-#cheatBox{position:absolute;right:10px;top:145px;z-index:12;padding:4px;background:rgba(0,0,0,.7);border:2px solid #555;pointer-events:auto;font-size:10px}
-#cheatForm{display:flex;align-items:center;gap:4px}
-#cheatForm label{color:#ffd84b;font-size:10px}
-#cheatInput{width:112px;min-width:0;padding:4px;background:#171717;border:2px solid #555;color:#fff;font:bold 10px "Courier New",monospace;text-transform:uppercase;user-select:text;-webkit-user-select:text;touch-action:auto}
-#cheatInput::placeholder{color:#999}
-#cheatSubmit{padding:4px 6px;background:#6b9e4f;border:2px solid #2f4d20;color:#fff;font:bold 10px "Courier New",monospace;cursor:pointer}
-#cheatSubmit:active{background:#588240}
 #chat{position:absolute;left:10px;bottom:110px;font-size:11px;width:340px;max-height:150px;overflow:hidden}
 #chat div{margin-bottom:2px;background:rgba(0,0,0,.35);padding:1px 5px;display:inline-block}
 
@@ -95,7 +88,7 @@ ul{padding-left:18px}
 #bBlk{right:112px;bottom:150px;width:64px;height:64px}
 #bShop{right:16px;top:120px;width:62px;height:62px;border-radius:8px}
 #bCrouch{left:150px;bottom:32px;width:60px;height:60px;font-size:11px}
-@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}#cheatBox{top:10px;width:130px;padding:4px}#cheatForm label{display:none}#cheatInput{width:50px;flex:1}}
+@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}}
 </style>
 </head>
 <body>
@@ -114,13 +107,6 @@ ul{padding-left:18px}
   </div>
   <div id="board" class="mc"></div>
   <div id="kills" class="mc"></div>
-  <div id="cheatBox" class="mc">
-    <form id="cheatForm" autocomplete="off">
-      <label for="cheatInput">CHEAT</label>
-      <input id="cheatInput" type="text" maxlength="24" placeholder="TYPE CODE" autocapitalize="none" autocomplete="off" spellcheck="false">
-      <button id="cheatSubmit" type="submit">GO</button>
-    </form>
-  </div>
   <div id="chat" class="mc"></div>
   <div id="banner" class="mc"></div>
   <div id="toast" class="mc"></div>
@@ -2127,27 +2113,6 @@ function showVictoryScreen(){
   if(locked)document.exitPointerLock();
   S.lvl();cgHappy();
 }
-
-el('cheatForm').addEventListener('submit',e=>{
-  e.preventDefault();
-  const field=el('cheatInput');
-  const code=field.value.trim().toLowerCase();
-  field.value='';
-  if(code==='trial'){startFinalTrial();return;}
-  if(code!=='finish')return UI.toast('Invalid cheat code');
-
-  player.xp=Math.max(player.xp,RANKS[RANKS.length-1].xp);
-  checkRank();
-  player.title=MAX_RANK_TITLE;
-  player.hp=player.maxHp;
-  const finalArena=ARENAS.length-1;
-  if(ARENA_I<finalArena)travel(finalArena-ARENA_I);
-  UI.stats();
-  saveProgress();
-  UI.banner('CONGRATULATIONS!','FINISH CODE ACCEPTED · FINAL ARENA · MAX RANK · FULL HP');
-  UI.chat('SERVER','Congratulations! You reached the final arena at max rank with full HP.',player.rank);
-  field.blur();
-});
 
 /* ---------- shop ---------- */
 let shopOpen=false,startOpen=true,deadOpen=false;
