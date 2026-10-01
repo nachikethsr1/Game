@@ -644,7 +644,7 @@ function buildFighterModel(f){
   const hg=new THREE.BoxGeometry(.52,.52,.52);
   const faceT=makeTex('face');
   const hm=[bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),
-            new THREE.MeshLambertMaterial({map:faceT}),bodyMat(f.skin)];
+            bodyMat(f.skin),new THREE.MeshLambertMaterial({map:faceT})];
   const head=new THREE.Mesh(hg,hm);head.position.y=1.53;G.add(head);
   const torso=mkBox(.52,.62,.28,armorTint||shirt,0,1.05,0,G);
   const armL=new THREE.Group();armL.position.set(-.38,1.32,0);G.add(armL);
@@ -1265,6 +1265,12 @@ function findCoverPoint(f,threat){
 }
 function aiThink(f){
   f.think=(f.state==='FIGHT'||f.state==='HUNT')?rnd(.18,.42):rnd(.5,1.25);
+  // Trial fighters stay locked onto the player instead of retargeting nearby legends.
+  if(f.trialIndex!==undefined&&TRIAL.active){
+    f.target=player;
+    f.state=f.pos.distanceTo(player.pos)<f.reach+3.2?'FIGHT':'HUNT';
+    return;
+  }
   const hpFrac=f.hp/f.maxHp;
 
   if(f.state==='IDLE'||f.state==='ASSESS'||f.state==='COVER'||f.state==='WATCH'||f.state==='PEACE')return;
@@ -1960,12 +1966,49 @@ const LEGENDARY=[
   {name:'ARENA KING',arch:'destroyer',type:'mace',mat:'diamond',hp:260,ability:'boss'}
 ];
 
+function buildTrialArena(){
+  clearWorld();
+  ARENA_I=4;ARENA=ARENAS[4];HALF=ARENA.size/2;
+  scene.background=new THREE.Color(0x1a0b2e);
+  scene.fog=new THREE.Fog(0x1a0b2e,26,110);
+  sun.intensity=0.5;
+  const S=ARENA.size;
+  const fg=new THREE.BoxGeometry(S,1,S);
+  const fm=new THREE.MeshLambertMaterial({map:tiled('obsid',S,S)});
+  DISPOSE.push(fg,fm);
+  const floor=new THREE.Mesh(fg,fm);floor.position.y=-0.5;world.add(floor);
+  const wh=7;
+  box(S,wh,1,'nether',0,wh/2,-HALF-0.5,true,[S,wh]);
+  box(S,wh,1,'nether',0,wh/2, HALF+0.5,true,[S,wh]);
+  box(1,wh,S,'nether',-HALF-0.5,wh/2,0,true,[S,wh]);
+  box(1,wh,S,'nether', HALF+0.5,wh/2,0,true,[S,wh]);
+  // little obstacles scattered for cover
+  const spots=[[-14,-10],[12,-16],[-20,8],[18,14],[-8,20],[6,-22],[22,-4],[-24,-18],[0,14],[16,24],[-16,26],[26,10],[-4,-16],[10,4]];
+  for(const [ox,oz] of spots){
+    const w=rnd(2,3.6),h=rnd(1.2,2.6),d=rnd(2,3.6);
+    box(w,h,d,Math.random()<.5?'nether':'obsid',ox,h/2,oz,true,[2,2]);
+  }
+  // glow pillars as landmarks in the corners
+  for(const [ox,oz] of [[-HALF+8,-HALF+8],[HALF-8,-HALF+8],[-HALF+8,HALF-8],[HALF-8,HALF-8]])
+    box(1.4,4.5,1.4,'glow',ox,2.25,oz,true);
+  // low centre platform
+  box(8,0.8,8,'stonebrick',0,0.4,0,true,[8,8]);
+  // green teleporter (takes you back AFTER you win the trial)
+  const g=new THREE.BoxGeometry(3,0.2,3),m=new THREE.MeshBasicMaterial({color:0x7ee36b,transparent:true,opacity:.75});
+  DISPOSE.push(g,m);
+  const p=new THREE.Mesh(g,m);p.position.set(0,0.1,HALF-5);world.add(p);
+  for(const s of [-1.5,1.5]){box(0.4,3,0.4,'emerald',s,1.5,HALF-5-1.5);box(0.4,3,0.4,'emerald',s,1.5,HALF-5+1.5);}
+  PORTAL_NEXT={mesh:p,x:0,z:HALF-5,t:0};
+  PORTAL_PREV=null;
+}
+
 function startFinalTrial(){
   if(player.rank<RANKS.length-1)return UI.toast('Reach LEGEND rank first!');
   if(TRIAL.active)return;
 
   TRIAL.active=true;
-  buildArena(4); // Use Legend Nether arena
+  TRIAL.fighters=[];
+  buildTrialArena(); // custom obsidian arena with obstacles
   player.pos.set(0,0,HALF-8);player.vel.set(0,0,0);player.hp=player.maxHp;
 
   // Remove all NPCs
@@ -1987,6 +2030,8 @@ function startFinalTrial(){
     f.trialAbility=L.ability;
     f.trialIndex=i;
     f.noRegen=true; // KEY: No HP regen
+    f.personality.aggression=0.95;f.personality.bravery=0.95;f.aggro=0.95;
+    f.target=player;f.state='HUNT';f.reactT=rnd(0.3,1.2); // they come for YOU
     fighters.push(f);
     TRIAL.fighters.push(f);
   });
@@ -2000,7 +2045,6 @@ function checkTrialVictory(){
   if(!TRIAL.active)return;
   const alive=TRIAL.fighters.filter(f=>!f.dead);
   if(alive.length===0){
-    TRIAL.active=false;
     TRIAL.defeated.push(Date.now());
     localStorage.setItem('blockArenaTrialWins',JSON.stringify(TRIAL.defeated));
     showVictoryScreen();
@@ -2237,11 +2281,28 @@ function updatePlayer(dt){
   else if(PORTAL_PREV&&nearPad(PORTAL_PREV))onPad=-1;
   if(onPad){
     portalT+=dt;
-    const nx=ARENA_I+onPad;
-    const ok=nx>=0&&nx<ARENAS.length&&nx<=player.rank;
-    UI.toast(ok?`Warping to ${ARENAS[nx]?ARENAS[nx].name:'???'}... ${(1.2-portalT).toFixed(1)}s`
-              :(nx>=ARENAS.length?'No arena beyond LEGEND':nx<0?'This is the first arena':'LOCKED — reach rank '+RANKS[nx].name));
-    if(portalT>1.2){portalT=0;travel(onPad);}
+    if(TRIAL.active){
+      // green teleporter inside the trial: only works once all 10 are dead
+      const done=TRIAL.fighters.every(f=>f.dead);
+      UI.toast(done?`Warping back to ${ARENAS[4].name}... ${(1.2-portalT).toFixed(1)}s`:'⚔ Defeat all 10 Legendary Fighters first!');
+      if(done&&portalT>1.2){
+        portalT=0;TRIAL.active=false;TRIAL.fighters=[];
+        buildArena(4);player.pos.copy(arenaSpot());player.vel.set(0,0,0);
+        spawnNPCs();UI.banner('BACK TO '+ARENAS[4].name,'Trial complete — GG, Champion!');
+        UI.stats();S.lvl();saveProgress();
+      }
+    }else if(onPad===1&&ARENA_I===ARENAS.length-1){
+      // green teleporter on the LAST arena: unlocked only at max rank → starts the 1v10
+      const ok=player.rank>=RANKS.length-1;
+      UI.toast(ok?`Entering THE FINAL TRIAL... ${(1.2-portalT).toFixed(1)}s`:'LOCKED — reach LEGEND rank first');
+      if(ok&&portalT>1.2){portalT=0;startFinalTrial();}
+    }else{
+      const nx=ARENA_I+onPad;
+      const ok=nx>=0&&nx<ARENAS.length&&nx<=player.rank;
+      UI.toast(ok?`Warping to ${ARENAS[nx]?ARENAS[nx].name:'???'}... ${(1.2-portalT).toFixed(1)}s`
+                :(nx<0?'This is the first arena':'LOCKED — reach rank '+RANKS[nx].name));
+      if(ok&&portalT>1.2){portalT=0;travel(onPad);}
+    }
   }else portalT=0;
 
   // camera
