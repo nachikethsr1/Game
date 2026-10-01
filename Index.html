@@ -47,13 +47,6 @@ canvas{display:block;position:fixed;inset:0}
 /* feeds */
 #kills{position:absolute;right:10px;top:190px;font-size:11px;text-align:right;width:280px}
 #kills div{margin-bottom:3px;background:rgba(0,0,0,.35);padding:2px 5px;display:inline-block}
-#cheatBox{position:absolute;right:10px;top:145px;z-index:12;padding:4px;background:rgba(0,0,0,.7);border:2px solid #555;pointer-events:auto;font-size:10px}
-#cheatForm{display:flex;align-items:center;gap:4px}
-#cheatForm label{color:#ffd84b;font-size:10px}
-#cheatInput{width:112px;min-width:0;padding:4px;background:#171717;border:2px solid #555;color:#fff;font:bold 10px "Courier New",monospace;text-transform:uppercase;user-select:text;-webkit-user-select:text;touch-action:auto}
-#cheatInput::placeholder{color:#999}
-#cheatSubmit{padding:4px 6px;background:#6b9e4f;border:2px solid #2f4d20;color:#fff;font:bold 10px "Courier New",monospace;cursor:pointer}
-#cheatSubmit:active{background:#588240}
 #chat{position:absolute;left:10px;bottom:110px;font-size:11px;width:340px;max-height:150px;overflow:hidden}
 #chat div{margin-bottom:2px;background:rgba(0,0,0,.35);padding:1px 5px;display:inline-block}
 
@@ -95,7 +88,7 @@ ul{padding-left:18px}
 #bBlk{right:112px;bottom:150px;width:64px;height:64px}
 #bShop{right:16px;top:120px;width:62px;height:62px;border-radius:8px}
 #bCrouch{left:150px;bottom:32px;width:60px;height:60px;font-size:11px}
-@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}#cheatBox{top:10px;width:130px;padding:4px}#cheatForm label{display:none}#cheatInput{width:50px;flex:1}}
+@media (max-width:720px){#board,#kills{display:none}#chat{width:210px;bottom:200px;max-height:80px}#stats{font-size:10px;min-width:150px}}
 </style>
 </head>
 <body>
@@ -114,13 +107,6 @@ ul{padding-left:18px}
   </div>
   <div id="board" class="mc"></div>
   <div id="kills" class="mc"></div>
-  <div id="cheatBox" class="mc">
-    <form id="cheatForm" autocomplete="off">
-      <label for="cheatInput">CHEAT</label>
-      <input id="cheatInput" type="text" maxlength="24" placeholder="TYPE CODE" autocapitalize="none" autocomplete="off" spellcheck="false">
-      <button id="cheatSubmit" type="submit">GO</button>
-    </form>
-  </div>
   <div id="chat" class="mc"></div>
   <div id="banner" class="mc"></div>
   <div id="toast" class="mc"></div>
@@ -228,7 +214,7 @@ async function cgInit(){
     console.log('[CG] CrazyGames SDK ready · environment:',window.CrazyGames.SDK.environment);
   }catch(e){console.warn('[CG] SDK init failed — running standalone:',e);}
 }
-cgInit();
+await cgInit(); // initialize CrazyGames Data before loading saved progress
 function cgMaybeLoadingStop(){
   if(CG.ready&&CG.loaded&&!CG.loadingStopped){
     CG.loadingStopped=true;
@@ -260,6 +246,25 @@ function cgRequestAd(type,onFinished,onError){ // never throws; always restores 
   }catch(e){cgMute(false);if(onError)onError(e);}
 }
 function cgHappy(){if(CG.ready){try{window.CrazyGames.SDK.game.happytime();}catch(e){}}}
+function cgData(){
+  if(!CG.ready)return null;
+  const sdk=CG_SDK();
+  return sdk&&sdk.data?sdk.data:null;
+}
+function cgDataGet(key){
+  try{
+    const data=cgData();
+    return data?data.getItem(key):null;
+  }catch(e){console.warn('[Save] Could not read CrazyGames data:',e);return null;}
+}
+function cgDataSet(key,value){
+  try{
+    const data=cgData();
+    if(!data)return false;
+    data.setItem(key,String(value));
+    return true;
+  }catch(e){console.warn('[Save] Could not write CrazyGames data:',e);return false;}
+}
 
 /* ============================================================ TEXTURES (16x16 pixel art) */
 const TEXCACHE={};
@@ -644,7 +649,7 @@ function buildFighterModel(f){
   const hg=new THREE.BoxGeometry(.52,.52,.52);
   const faceT=makeTex('face');
   const hm=[bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),bodyMat(f.skin),
-            new THREE.MeshLambertMaterial({map:faceT}),bodyMat(f.skin)];
+            bodyMat(f.skin),new THREE.MeshLambertMaterial({map:faceT})];
   const head=new THREE.Mesh(hg,hm);head.position.y=1.53;G.add(head);
   const torso=mkBox(.52,.62,.28,armorTint||shirt,0,1.05,0,G);
   const armL=new THREE.Group();armL.position.set(-.38,1.32,0);G.add(armL);
@@ -1265,6 +1270,12 @@ function findCoverPoint(f,threat){
 }
 function aiThink(f){
   f.think=(f.state==='FIGHT'||f.state==='HUNT')?rnd(.18,.42):rnd(.5,1.25);
+  // Trial fighters stay locked onto the player instead of retargeting nearby legends.
+  if(f.trialIndex!==undefined&&TRIAL.active){
+    f.target=player;
+    f.state=f.pos.distanceTo(player.pos)<f.reach+3.2?'FIGHT':'HUNT';
+    return;
+  }
   const hpFrac=f.hp/f.maxHp;
 
   if(f.state==='IDLE'||f.state==='ASSESS'||f.state==='COVER'||f.state==='WATCH'||f.state==='PEACE')return;
@@ -1606,8 +1617,7 @@ function saveProgress(){
       owned:player.owned.map(w=>({type:w.type.id,mat:w.mat.id})),
       selected:player.sel,arena:ARENA_I
     };
-    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
-    return true;
+    return cgDataSet(SAVE_KEY,JSON.stringify(data));
   }catch(e){
     console.warn('[Save] Could not save player progress:',e);
     return false;
@@ -1615,7 +1625,7 @@ function saveProgress(){
 }
 function loadProgress(){
   try{
-    const raw=localStorage.getItem(SAVE_KEY);
+    const raw=cgDataGet(SAVE_KEY);
     if(!raw)return false;
     const data=JSON.parse(raw);
     if(!data||data.version!==1)return false;
@@ -1941,9 +1951,19 @@ function travel(dir){
   saveProgress();
 }
 /* ==================== FINAL TRIAL ==================== */
+const TRIAL_WINS_KEY='blockArenaTrialWins';
+function loadTrialWins(){
+  try{
+    const wins=JSON.parse(cgDataGet(TRIAL_WINS_KEY)||'[]');
+    return Array.isArray(wins)?wins:[];
+  }catch(e){
+    console.warn('[Save] Could not load trial wins:',e);
+    return [];
+  }
+}
 const TRIAL={
   active:false,
-  defeated:JSON.parse(localStorage.getItem('blockArenaTrialWins')||'[]'),
+  defeated:loadTrialWins(),
   fighters:[]
 };
 
@@ -1960,12 +1980,49 @@ const LEGENDARY=[
   {name:'ARENA KING',arch:'destroyer',type:'mace',mat:'diamond',hp:260,ability:'boss'}
 ];
 
+function buildTrialArena(){
+  clearWorld();
+  ARENA_I=4;ARENA=ARENAS[4];HALF=ARENA.size/2;
+  scene.background=new THREE.Color(0x1a0b2e);
+  scene.fog=new THREE.Fog(0x1a0b2e,26,110);
+  sun.intensity=0.5;
+  const S=ARENA.size;
+  const fg=new THREE.BoxGeometry(S,1,S);
+  const fm=new THREE.MeshLambertMaterial({map:tiled('obsid',S,S)});
+  DISPOSE.push(fg,fm);
+  const floor=new THREE.Mesh(fg,fm);floor.position.y=-0.5;world.add(floor);
+  const wh=7;
+  box(S,wh,1,'nether',0,wh/2,-HALF-0.5,true,[S,wh]);
+  box(S,wh,1,'nether',0,wh/2, HALF+0.5,true,[S,wh]);
+  box(1,wh,S,'nether',-HALF-0.5,wh/2,0,true,[S,wh]);
+  box(1,wh,S,'nether', HALF+0.5,wh/2,0,true,[S,wh]);
+  // little obstacles scattered for cover
+  const spots=[[-14,-10],[12,-16],[-20,8],[18,14],[-8,20],[6,-22],[22,-4],[-24,-18],[0,14],[16,24],[-16,26],[26,10],[-4,-16],[10,4]];
+  for(const [ox,oz] of spots){
+    const w=rnd(2,3.6),h=rnd(1.2,2.6),d=rnd(2,3.6);
+    box(w,h,d,Math.random()<.5?'nether':'obsid',ox,h/2,oz,true,[2,2]);
+  }
+  // glow pillars as landmarks in the corners
+  for(const [ox,oz] of [[-HALF+8,-HALF+8],[HALF-8,-HALF+8],[-HALF+8,HALF-8],[HALF-8,HALF-8]])
+    box(1.4,4.5,1.4,'glow',ox,2.25,oz,true);
+  // low centre platform
+  box(8,0.8,8,'stonebrick',0,0.4,0,true,[8,8]);
+  // green teleporter (takes you back AFTER you win the trial)
+  const g=new THREE.BoxGeometry(3,0.2,3),m=new THREE.MeshBasicMaterial({color:0x7ee36b,transparent:true,opacity:.75});
+  DISPOSE.push(g,m);
+  const p=new THREE.Mesh(g,m);p.position.set(0,0.1,HALF-5);world.add(p);
+  for(const s of [-1.5,1.5]){box(0.4,3,0.4,'emerald',s,1.5,HALF-5-1.5);box(0.4,3,0.4,'emerald',s,1.5,HALF-5+1.5);}
+  PORTAL_NEXT={mesh:p,x:0,z:HALF-5,t:0};
+  PORTAL_PREV=null;
+}
+
 function startFinalTrial(){
   if(player.rank<RANKS.length-1)return UI.toast('Reach LEGEND rank first!');
   if(TRIAL.active)return;
 
   TRIAL.active=true;
-  buildArena(4); // Use Legend Nether arena
+  TRIAL.fighters=[];
+  buildTrialArena(); // custom obsidian arena with obstacles
   player.pos.set(0,0,HALF-8);player.vel.set(0,0,0);player.hp=player.maxHp;
 
   // Remove all NPCs
@@ -1987,6 +2044,8 @@ function startFinalTrial(){
     f.trialAbility=L.ability;
     f.trialIndex=i;
     f.noRegen=true; // KEY: No HP regen
+    f.personality.aggression=0.95;f.personality.bravery=0.95;f.aggro=0.95;
+    f.target=player;f.state='HUNT';f.reactT=rnd(0.3,1.2); // they come for YOU
     fighters.push(f);
     TRIAL.fighters.push(f);
   });
@@ -2000,9 +2059,8 @@ function checkTrialVictory(){
   if(!TRIAL.active)return;
   const alive=TRIAL.fighters.filter(f=>!f.dead);
   if(alive.length===0){
-    TRIAL.active=false;
     TRIAL.defeated.push(Date.now());
-    localStorage.setItem('blockArenaTrialWins',JSON.stringify(TRIAL.defeated));
+    cgDataSet(TRIAL_WINS_KEY,JSON.stringify(TRIAL.defeated));
     showVictoryScreen();
   }else{
     UI.banner(`${10-alive.length}/10 DEFEATED`,'Keep fighting! They cannot regenerate HP!');
@@ -2011,10 +2069,11 @@ function checkTrialVictory(){
 
 /* ==================== VICTORY + VOTING ==================== */
 const VOTE_KEY='blockArenaVotes';
+const VOTED_KEY='blockArenaVoted';
 const VOTE_GOAL=10;
 
-function getVotes(){return parseInt(localStorage.getItem(VOTE_KEY))||4;}
-function hasVoted(){return localStorage.getItem('blockArenaVoted')==='1';}
+function getVotes(){return parseInt(cgDataGet(VOTE_KEY),10)||4;}
+function hasVoted(){return cgDataGet(VOTED_KEY)==='1';}
 
 function showVictoryScreen(){
   cgGameplayStop();
@@ -2053,9 +2112,9 @@ function showVictoryScreen(){
 
   document.getElementById('voteBtn').onclick=()=>{
     if(hasVoted())return;
-    localStorage.setItem('blockArenaVoted','1');
+    cgDataSet(VOTED_KEY,'1');
     const nv=Math.min(getVotes()+1,VOTE_GOAL);
-    localStorage.setItem(VOTE_KEY,nv);
+    cgDataSet(VOTE_KEY,nv);
     document.getElementById('voteFill').style.width=(nv/VOTE_GOAL)*100+'%';
     document.getElementById('voteText').textContent=`${nv} / ${VOTE_GOAL}`;
     document.getElementById('voteBtn').textContent='✓ VOTED';
@@ -2083,27 +2142,6 @@ function showVictoryScreen(){
   if(locked)document.exitPointerLock();
   S.lvl();cgHappy();
 }
-
-el('cheatForm').addEventListener('submit',e=>{
-  e.preventDefault();
-  const field=el('cheatInput');
-  const code=field.value.trim().toLowerCase();
-  field.value='';
-  if(code==='trial'){startFinalTrial();return;}
-  if(code!=='finish')return UI.toast('Invalid cheat code');
-
-  player.xp=Math.max(player.xp,RANKS[RANKS.length-1].xp);
-  checkRank();
-  player.title=MAX_RANK_TITLE;
-  player.hp=player.maxHp;
-  const finalArena=ARENAS.length-1;
-  if(ARENA_I<finalArena)travel(finalArena-ARENA_I);
-  UI.stats();
-  saveProgress();
-  UI.banner('CONGRATULATIONS!','FINISH CODE ACCEPTED · FINAL ARENA · MAX RANK · FULL HP');
-  UI.chat('SERVER','Congratulations! You reached the final arena at max rank with full HP.',player.rank);
-  field.blur();
-});
 
 /* ---------- shop ---------- */
 let shopOpen=false,startOpen=true,deadOpen=false;
@@ -2237,11 +2275,28 @@ function updatePlayer(dt){
   else if(PORTAL_PREV&&nearPad(PORTAL_PREV))onPad=-1;
   if(onPad){
     portalT+=dt;
-    const nx=ARENA_I+onPad;
-    const ok=nx>=0&&nx<ARENAS.length&&nx<=player.rank;
-    UI.toast(ok?`Warping to ${ARENAS[nx]?ARENAS[nx].name:'???'}... ${(1.2-portalT).toFixed(1)}s`
-              :(nx>=ARENAS.length?'No arena beyond LEGEND':nx<0?'This is the first arena':'LOCKED — reach rank '+RANKS[nx].name));
-    if(portalT>1.2){portalT=0;travel(onPad);}
+    if(TRIAL.active){
+      // green teleporter inside the trial: only works once all 10 are dead
+      const done=TRIAL.fighters.every(f=>f.dead);
+      UI.toast(done?`Warping back to ${ARENAS[4].name}... ${(1.2-portalT).toFixed(1)}s`:'⚔ Defeat all 10 Legendary Fighters first!');
+      if(done&&portalT>1.2){
+        portalT=0;TRIAL.active=false;TRIAL.fighters=[];
+        buildArena(4);player.pos.copy(arenaSpot());player.vel.set(0,0,0);
+        spawnNPCs();UI.banner('BACK TO '+ARENAS[4].name,'Trial complete — GG, Champion!');
+        UI.stats();S.lvl();saveProgress();
+      }
+    }else if(onPad===1&&ARENA_I===ARENAS.length-1){
+      // green teleporter on the LAST arena: unlocked only at max rank → starts the 1v10
+      const ok=player.rank>=RANKS.length-1;
+      UI.toast(ok?`Entering THE FINAL TRIAL... ${(1.2-portalT).toFixed(1)}s`:'LOCKED — reach LEGEND rank first');
+      if(ok&&portalT>1.2){portalT=0;startFinalTrial();}
+    }else{
+      const nx=ARENA_I+onPad;
+      const ok=nx>=0&&nx<ARENAS.length&&nx<=player.rank;
+      UI.toast(ok?`Warping to ${ARENAS[nx]?ARENAS[nx].name:'???'}... ${(1.2-portalT).toFixed(1)}s`
+                :(nx<0?'This is the first arena':'LOCKED — reach rank '+RANKS[nx].name));
+      if(ok&&portalT>1.2){portalT=0;travel(onPad);}
+    }
   }else portalT=0;
 
   // camera
