@@ -445,7 +445,11 @@ const AudioSys={
   if(!this.ctx||this.ctx.state!=='running')return;
   const CH=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
   const MEL=[69,0,72,0,76,0,74,72,69,0,67,0,64,0,67,69,72,0,76,0,79,0,76,74,72,0,69,0,67,0,64,0];
-  while(this.nextT<this.ctx.currentTime+.28){
+  /* if the audio clock ran away (tab hidden / long stall), SKIP the backlog —
+     catching up would schedule thousands of notes at once and freeze the page */
+  if(this.nextT<this.ctx.currentTime-.5)this.nextT=this.ctx.currentTime+.05;
+  let schedSteps=0;
+  while(this.nextT<this.ctx.currentTime+.28&&schedSteps++<32){
    const s=this.step,t=this.nextT;
    if(s%8===0){const ch=CH[(s/8)%4];ch.forEach(m=>{
     const o=this.ctx.createOscillator(),g=this.ctx.createGain(),f=this.ctx.createBiquadFilter();
@@ -464,6 +468,7 @@ const AudioSys={
    }
    this.step=(this.step+1)%32;this.nextT+=.16;
   }
+  if(schedSteps>=32)this.nextT=this.ctx.currentTime+.05; /* still behind after cap — resync */
  },
  noiseMusic(t){const len=(this.ctx.sampleRate*.04)|0,buf=this.ctx.createBuffer(1,len,this.ctx.sampleRate),d=buf.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;const s=this.ctx.createBufferSource();s.buffer=buf;const f=this.ctx.createBiquadFilter();f.type='highpass';f.frequency.value=6000;const g=this.ctx.createGain();g.gain.setValueAtTime(.03,t);g.gain.exponentialRampToValueAtTime(.001,t+.04);s.connect(f);f.connect(g);g.connect(this.musicG);s.start(t);s.stop(t+.05);}
 };
@@ -1468,11 +1473,23 @@ addEventListener('resize',()=>{
  applyQuality();resizePreview();checkOrient();
 });
 addEventListener('orientationchange',()=>setTimeout(checkOrient,200));
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&gameState==='battle'&&!paused)pauseGame();});
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden){
+  if(gameState==='battle'&&!paused)pauseGame();
+  /* freeze the music clock in ANY state so schedule() can't build a backlog */
+  AudioSys.suspend();
+ }else{
+  if(!paused)AudioSys.resume();
+  checkOrient();
+ }
+});
 
 /* ---------------- UI ---------------- */
 const UI={
- floats:[],hpShown:[1,1],
+ floats:[],hpShown:[1,1],el:{timer:null,p1:null,p2:null,sp:null,spCd:null},
+ /* change-detection caches: HUD DOM writes only when a value actually changes */
+ _hw:[-1,-1],_gw:[-1,-1],_nh:[-1,-1],_pc:[-1,-1],_rd:[false,false],_ct:[-1,-1],
+ _tm:-1,_tmLow:null,_spP:-1,_spTxt:'',_spState:'',
  init(){
   $('btnStart').onclick=()=>{AudioSys.init();AudioSys.select();showSelect();};
   $('btnSettings1').onclick=()=>{AudioSys.init();AudioSys.menu();openSettings();};
@@ -1506,7 +1523,7 @@ const UI={
   $('setDiff').onchange=e=>{SETTINGS.diff=e.target.value;saveSettings();};
   $('setTime').onchange=e=>{SETTINGS.time=+e.target.value;saveSettings();};
   $('setBO').onchange=e=>{SETTINGS.bo=+e.target.value;saveSettings();};
-  $('setQual').onchange=e=>{SETTINGS.qual=e.target.value;applyQuality();saveSettings();};
+  $('setQual').onchange=e=>{SETTINGS.qual=e.target.value;perf.slow=0;applyQuality();saveSettings();};
   $('setStart').onchange=e=>{SETTINGS.start=e.target.value;saveSettings();};
   $('setMirror').onclick=()=>{SETTINGS.mirror=!SETTINGS.mirror;sync();saveSettings();AudioSys.menu();};
   $('setMusic').onclick=()=>{SETTINGS.music=!SETTINGS.music;AudioSys.applyVolumes();sync();saveSettings();AudioSys.menu();};
@@ -1575,6 +1592,13 @@ const UI={
   }
  },
  setupHUD(){
+  const e=this.el;
+  e.timer=$('timer');
+  e.p1={fill:$('p1fill'),ghost:$('p1ghost'),num:$('p1num'),cd:$('p1cd'),cdtxt:$('p1cdtxt')};
+  e.p2={fill:$('p2fill'),ghost:$('p2ghost'),num:$('p2num'),cd:$('p2cd'),cdtxt:$('p2cdtxt')};
+  if(IS_TOUCH){e.sp=$('btnSpecial');e.spCd=$('spCd');}
+  this._hw=[-1,-1];this._gw=[-1,-1];this._nh=[-1,-1];this._pc=[-1,-1];this._rd=[false,false];this._ct=[-1,-1];
+  this._tm=-1;this._tmLow=null;this._spP=-1;this._spTxt='';this._spState='';
   const set=(f,pre,tag)=>{
    $(pre+'name').textContent=f.def.name;
    $(pre+'fill').style.setProperty('--cc',f.def.css);
@@ -1595,26 +1619,38 @@ const UI={
   }
  },
  updateHUD(dt){
-  if(fighters.length<2)return;
-  for(const[f,pre,idx]of[[player,'p1',0],[cpu,'p2',1]]){
+  const e=this.el;
+  if(paused||!e.timer||!e.p1||fighters.length<2)return;
+  for(const[idx,pre]of[[0,'p1'],[1,'p2']]){
+   const f=fighters[idx],el=e[pre];
    const frac=f.hp/f.maxHp;
-   $(pre+'fill').style.width=(frac*100)+'%';
+   if(this._hw[idx]!==frac){el.fill.style.width=(frac*100)+'%';this._hw[idx]=frac;}
    this.hpShown[idx]=lerp(this.hpShown[idx],frac,Math.min(1,dt*3));
    if(this.hpShown[idx]<frac)this.hpShown[idx]=frac;
-   $(pre+'ghost').style.width=(this.hpShown[idx]*100)+'%';
-   $(pre+'num').textContent=Math.ceil(f.hp)+' / '+f.maxHp;
-   const pct=f.cd<=0?100:(1-f.cd/f.def.cd)*100;
-   const ring=$(pre+'cd');ring.style.setProperty('--p',pct);
-   ring.classList.toggle('ready',f.cd<=0);
-   $(pre+'cdtxt').textContent=f.cd<=0?'RDY':Math.ceil(f.cd);
+   const g=this.hpShown[idx]*100;
+   if(Math.abs(g-this._gw[idx])>=.1){el.ghost.style.width=g+'%';this._gw[idx]=g;}
+   const n=Math.ceil(f.hp);
+   if(this._nh[idx]!==n){el.num.textContent=n+' / '+f.maxHp;this._nh[idx]=n;}
+   const rdy=f.cd<=0,pct=rdy?100:(1-f.cd/f.def.cd)*100;
+   if(rdy!==this._rd[idx]||Math.abs(pct-this._pc[idx])>=.5){
+    el.cd.style.setProperty('--p',rdy?100:Math.round(pct*10)/10);
+    el.cd.classList.toggle('ready',rdy);
+    this._rd[idx]=rdy;this._pc[idx]=pct;
+   }
+   const ct=rdy?'RDY':Math.ceil(f.cd);
+   if(this._ct[idx]!==ct){el.cdtxt.textContent=ct;this._ct[idx]=ct;}
   }
-  const tEl=$('timer');tEl.textContent=Math.max(0,Math.ceil(roundTime));
-  tEl.classList.toggle('low',roundTime<=10&&gameState==='battle');
-  if(IS_TOUCH){
-   const sp=$('btnSpecial'),pct=player.cd<=0?100:(1-player.cd/player.def.cd)*100;
-   sp.style.setProperty('--p',pct);$('spCd').style.setProperty('--p',pct);
-   $('spCd').textContent=player.cd<=0?'':Math.ceil(player.cd);
-   sp.classList.toggle('rdy',player.cd<=0);sp.classList.toggle('dis',player.cd>0);
+  const tc=Math.max(0,Math.ceil(roundTime));
+  if(this._tm!==tc){e.timer.textContent=tc;this._tm=tc;}
+  const low=roundTime<=10&&gameState==='battle';
+  if(this._tmLow!==low){e.timer.classList.toggle('low',low);this._tmLow=low;}
+  if(IS_TOUCH&&e.sp){
+   const p=player.cd<=0?100:Math.round((1-player.cd/player.def.cd)*1000)/10;
+   if(p!==this._spP){e.sp.style.setProperty('--p',p);e.spCd.style.setProperty('--p',p);this._spP=p;}
+   const tx=player.cd<=0?'':Math.ceil(player.cd);
+   if(tx!==this._spTxt){e.spCd.textContent=tx;this._spTxt=tx;}
+   const cls=player.cd<=0?'rdy':'dis';
+   if(cls!==this._spState){e.sp.classList.toggle('rdy',cls==='rdy');e.sp.classList.toggle('dis',cls==='dis');this._spState=cls;}
   }
  }
 };
@@ -1626,8 +1662,8 @@ let selP=-1,selC=-1,selPhase=0;
 let previewRenderer=null,previewScene=null,previewCam=null,previewRigs=[];
 function initPreviews(){
  if(previewRenderer)return;
- previewRenderer=new THREE.WebGLRenderer({canvas:$('previewCanvas'),alpha:true,antialias:true});
- previewRenderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));
+ previewRenderer=new THREE.WebGLRenderer({canvas:$('previewCanvas'),alpha:true,antialias:false});
+ previewRenderer.setPixelRatio(Math.min(devicePixelRatio||1,1.25));
  previewRenderer.outputEncoding=THREE.sRGBEncoding;previewRenderer.setClearColor(0x000000,0);
  previewRenderer.autoClear=false;
  previewScene=new THREE.Scene();
@@ -1647,15 +1683,16 @@ function resizePreview(){
  const r=$('cardWrap').getBoundingClientRect();
  previewRenderer.setSize(r.width,r.height,false);
 }
+let pvList=null;
 function renderPreviews(t){
  if(!previewRenderer)return;
  const wrap=$('cardWrap').getBoundingClientRect();
  if(wrap.width<10)return;
+ if(!pvList)pvList=Array.from(document.querySelectorAll('.card .pv'));
  previewRenderer.setScissorTest(false);
  previewRenderer.clear(true,true,true);
  previewRenderer.setScissorTest(true);
- const pvs=document.querySelectorAll('.card .pv');
- pvs.forEach((pv,i)=>{
+ pvList.forEach((pv,i)=>{
   const r=pv.getBoundingClientRect();
   const x=r.left-wrap.left,y=wrap.height-(r.bottom-wrap.top);
   if(r.width<4||r.height<4)return;
@@ -1668,7 +1705,8 @@ function renderPreviews(t){
   rig.userData.shL.rotation.x=Math.sin(t*2.2+i)*.08;
   rig.userData.shR.rotation.x=-Math.sin(t*2.2+i)*.08;
   rig.userData.shL.rotation.z=.12;rig.userData.shR.rotation.z=-.12;
-  previewCam.aspect=r.width/r.height;previewCam.updateProjectionMatrix();
+  const ar=r.width/r.height;
+  if(Math.abs(previewCam.aspect-ar)>.01){previewCam.aspect=ar;previewCam.updateProjectionMatrix();}
   const h=ROSTER[i].id==='fat'?1.35:1.2;
   previewCam.position.set(i*6,h,4.4);previewCam.lookAt(i*6,h-.1,0);
   previewRenderer.render(previewScene,previewCam);
@@ -1676,6 +1714,7 @@ function renderPreviews(t){
  previewRenderer.setScissorTest(false);
 }
 function buildCards(){
+ pvList=null;
  const row=$('cardRow');row.innerHTML='';
  ROSTER.forEach((def,i)=>{
   const c=document.createElement('div');c.className='card';c.dataset.i=i;
@@ -1840,10 +1879,29 @@ function resolveOverlap(){
  }
 }
 
+/* ---------------- AUTO-DEGRADE (perf guard) ---------------- */
+/* if the device can't hold ~30fps, drop to low quality once so the game
+   stays playable instead of crawling forever */
+const perf={slow:0,degraded:false};
+function perfTick(dt){
+ if(SETTINGS.qual!=='auto'||perf.degraded)return;
+ if(dt>1/28)perf.slow++;else perf.slow=Math.max(0,perf.slow-2);
+ if(perf.slow<70)return;
+ perf.degraded=true;
+ console.info('[perf] sustained low FPS — dropping to low quality');
+ renderer.setPixelRatio(1);
+ renderer.setSize(innerWidth,innerHeight);
+ sunLight.shadow.mapSize.set(1024,1024);
+ if(sunLight.shadow.map){sunLight.shadow.map.dispose();sunLight.shadow.map=null;}
+ renderer.shadowMap.type=THREE.BasicShadowMap;
+ Env.setQuality(true);
+}
+
 /* ---------------- MAIN LOOP ---------------- */
 function animate(){
  requestAnimationFrame(animate);
  const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
+ perfTick(dt);
  if(!paused){
   Env.update(t,dt);
   if(gameState==='battle'){
@@ -1879,6 +1937,18 @@ applyQuality();
 checkOrient();
 showTitle();
 addEventListener('pointerdown',function boot(){AudioSys.init();AudioSys.resume();removeEventListener('pointerdown',boot);},{once:true});
+/* if the GPU context dies (common on memory-starved phones), the canvas would
+   freeze forever — tell the user and reload instead */
+$('gl').addEventListener('webglcontextlost',e=>{
+ e.preventDefault();
+ try{
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(10,6,20,.92);color:#ffd24a;font:700 15px Rubik,sans-serif;text-align:center;padding:24px';
+  d.textContent='Graphics context was lost — reloading the game…';
+  document.body.appendChild(d);
+ }catch(_){}
+ setTimeout(()=>location.reload(),1500);
+});
 animate();
 </script>
 </body>
