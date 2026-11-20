@@ -2,6 +2,7 @@
 // OPERATION INDIA — player.js
 // Voxel character factory + fully procedural animation system.
 // Every mesh, face part and animation is generated in code.
+// Stage 2 adds airborne/landing layers — the rig is never reset.
 // ============================================================
 import * as THREE from 'three';
 
@@ -33,12 +34,10 @@ const clamp = THREE.MathUtils.clamp, damp = THREE.MathUtils.damp, lerp = THREE.M
 const LEG = 0.78, THIGH = 0.40, SHIN = 0.38, TORSO = 0.54, NECK = 0.04;
 const HEAD_W = 0.38, HEAD_H = 0.40, HEAD_D = 0.36;
 const BODY_W = 0.42, BODY_D = 0.22, ARM_W = 0.13, UPPER = 0.30, FORE = 0.28;
-const HEAD_Y = LEG + TORSO + NECK + HEAD_H * 0.5;   // 1.56
-export const EYE_Y = HEAD_Y + 0.025;                // 1.585
+const HEAD_Y = LEG + TORSO + NECK + HEAD_H * 0.5;
+export const EYE_Y = HEAD_Y + 0.025;
 
 // ---- expression library ----
-// bL/bR brow tilt (inner-up positive on left), bY brow lift, lid baseline,
-// curve mouth corners (+ smile / − frown), open jaw, pY pupil drift
 const EXPR = {
   neutral:      { bL: 0.00, bR: 0.00, bY: 0.000, lid: 0.06, curve: 0.00, open: 0.00, pY: 0.000 },
   smile:        { bL: 0.04, bR:-0.04, bY: 0.005, lid: 0.20, curve: 0.55, open: 0.05, pY: 0.002 },
@@ -51,7 +50,7 @@ const EXPR = {
   awkward:      { bL: 0.10, bR:-0.16, bY: 0.004, lid: 0.14, curve: 0.22, open: 0.04, pY: 0.004 },
 };
 
-// ---- one-shot gesture clips: fn(char, t, k) with blend envelope k ----
+// ---- one-shot gesture clips ----
 const CLIPS = {
   wave:      { dur: 1.6, fn(c, t, k) {
     c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -2.35, k);
@@ -84,20 +83,42 @@ const CLIPS = {
     c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.28, k);
     c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.22, k);
     c.j.torso.rotation.x += 0.08 * k; } },
-  pickup:    { dur: 1.6, fn(c, t, k) {
-    c.j.torso.rotation.x = lerp(c.j.torso.rotation.x, 0.40, k);
-    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -0.80, k);
-    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.35, k);
-    c.fx.headPitch += 0.34 * k; } },
-  offer:     { dur: 2.1, fn(c, t, k) {
-    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.38, k);
-    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.32, k);
-    c.j.torso.rotation.x += 0.10 * k; } },
+  pickup:    { dur: 1.5, fn(c, t, k) {
+    c.j.torso.rotation.x = lerp(c.j.torso.rotation.x, 0.15, k);
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.56, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, 0.02, k);
+    c.fx.headPitch += 0.25 * k; } },
+  pickShelf: { dur: 1.5, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.20, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -1.08, k);
+    c.fx.headPitch += 0.20 * k; } },
+  place:     { dur: 1.5, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.56, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, 0.02, k);
+    c.j.torso.rotation.x += 0.15 * k;
+    c.fx.headPitch += 0.18 * k; } },
+  offer:     { dur: 2.0, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.45, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.20, k);
+    c.j.torso.rotation.x += 0.30 * k; } },
   receive:   { dur: 1.7, fn(c, t, k) {
     c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.30, k);
     c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.30, k);
     c.j.torso.rotation.x += 0.07 * k; } },
   lookAround:{ dur: 3.2, fn(c, t, k) { c.fx.headYaw += Math.sin(t * 1.35) * 0.42 * k; } },
+  // ---- Stage 2 ----
+  jump:      { dur: 0.35, fn(c, t, k) {
+    c.j.torso.rotation.x += 0.06 * k;
+    c.j.shL.rotation.x += -0.25 * k;
+    c.j.shR.rotation.x += -0.25 * k; } },
+  land:      { dur: 0.45, fn(c, t, k) {
+    const dip = Math.sin(Math.min(1, t / 0.18) * Math.PI * 0.5) * (1 - Math.max(0, (t - 0.18) / 0.27));
+    c.j.kneeL.rotation.x += 0.55 * dip * k;
+    c.j.kneeR.rotation.x += 0.55 * dip * k;
+    c.j.hipL.rotation.x += -0.30 * dip * k;
+    c.j.hipR.rotation.x += -0.30 * dip * k;
+    c.j.torso.rotation.x += 0.18 * dip * k;
+    c.fx.headPitch += 0.12 * dip * k; } },
 };
 
 export function createCharacter(opts) {
@@ -112,7 +133,7 @@ export function createCharacter(opts) {
   const pantsM = mat(P.pants, 0.86), shoeM = mat(P.shoe, 0.55), soleM = mat(P.sole || '#c9c5bc', 0.6);
 
   const group = new THREE.Group();
-  const j = {}; // joints
+  const j = {};
 
   // ---------- legs ----------
   function makeLeg(side) {
@@ -135,7 +156,6 @@ export function createCharacter(opts) {
   const torso = new THREE.Group(); torso.position.y = 0.06; hips.add(torso); j.torso = torso;
   const chest = box(BODY_W, TORSO - 0.06, BODY_D, topM); chest.position.y = (TORSO - 0.06) / 2; torso.add(chest);
 
-  // outfit detailing
   if (F.jacket) {
     const jm = mat(P.jacket, 0.8);
     const back = box(BODY_W + 0.03, TORSO - 0.10, 0.035, jm); back.position.set(0, (TORSO - 0.06) / 2, -BODY_D / 2 - 0.012); torso.add(back);
@@ -188,12 +208,10 @@ export function createCharacter(opts) {
   const neckM = box(0.12, NECK + 0.03, 0.12, skin); neckM.position.y = NECK / 2; neck.add(neckM);
   const head = new THREE.Group(); head.position.y = NECK; neck.add(head); j.head = head;
   const skull = box(HEAD_W, HEAD_H, HEAD_D, skin); skull.position.y = HEAD_H / 2; head.add(skull);
-  const fz = HEAD_D / 2; // face plane
+  const fz = HEAD_D / 2;
 
-  // ears
   for (const s of [-1, 1]) { const ear = box(0.025, 0.06, 0.045, skinDark, false); ear.position.set(s * (HEAD_W / 2 + 0.01), HEAD_H * 0.48, 0); head.add(ear); }
 
-  // hair styles
   if (F.hairStyle === 'short') {
     const top = box(HEAD_W + 0.03, 0.09, HEAD_D + 0.03, hairM); top.position.y = HEAD_H + 0.035; head.add(top);
     const fringe = box(HEAD_W + 0.03, 0.07, 0.06, hairM); fringe.position.set(0, HEAD_H - 0.03, fz - 0.015); head.add(fringe);
@@ -211,10 +229,9 @@ export function createCharacter(opts) {
     const bun = box(0.15, 0.14, 0.13, hairM); bun.position.set(0, HEAD_H + 0.05, -fz - 0.05); head.add(bun);
   }
 
-  // ---- face: separate animated components ----
   const eyeY = HEAD_H * 0.55, eyeX = 0.088;
   const whiteM = mat('#f6f2e8', 0.35), pupilM = mat(P.eye || '#241a12', 0.3);
-  const lidGeo = new THREE.BoxGeometry(1, 1, 1); lidGeo.translate(0, -0.5, 0); // origin at top edge
+  const lidGeo = new THREE.BoxGeometry(1, 1, 1); lidGeo.translate(0, -0.5, 0);
   const face = { eyes: [], pupils: [], lids: [], brows: [] };
   for (const s of [-1, 1]) {
     const white = box(0.078, 0.056, 0.012, whiteM, false); white.position.set(s * eyeX, eyeY, fz + 0.004); head.add(white);
@@ -248,6 +265,7 @@ export function createCharacter(opts) {
     handL: armL.hand, handR: armR.hand,
     yaw: 0, targetYaw: 0, speed: 0, selfDrive: false, onStep: null,
     talking: false, loop: 'idle', clip: null,
+    airK: 0, airRise: 0, externalCollision: false,
     t: Math.random() * 20, phase: 0, stepIndex: 0, walkK: 0,
     exprName: 'neutral', expr: { ...EXPR.neutral }, exprT: { ...EXPR.neutral },
     blinkTimer: 1.5 + Math.random() * 2, blinkT: 99,
@@ -264,9 +282,10 @@ export function createCharacter(opts) {
   ch.teleport = (x, z, yaw) => {
     group.position.set(x, 0, z); ch.yaw = ch.targetYaw = yaw; group.rotation.y = yaw;
     ch.speed = 0; ch.phase = 0; ch.walkK = 0; ch.clip = null; ch.talking = false; ch.lookTarget = null;
+    ch.airK = 0; ch.airRise = 0;
   };
-  ch.headWorld = (out) => out.set(group.position.x + Math.sin(ch.yaw) * 0.03, EYE_Y, group.position.z + Math.cos(ch.yaw) * 0.03);
-  ch.clearHands = () => { for (const h of [armL.hand, armR.hand]) { for (let i = h.children.length - 1; i >= 0; i--) { if (h.children[i] !== undefined && h.children[i].userData.prop) h.remove(h.children[i]); } } };
+  ch.headWorld = (out) => out.set(group.position.x + Math.sin(ch.yaw) * 0.03, group.position.y + EYE_Y, group.position.z + Math.cos(ch.yaw) * 0.03);
+  ch.clearHands = () => { for (const h of [armL.hand, armR.hand]) { for (let i = h.children.length - 1; i >= 0; i--) { if (h.children[i].userData.prop) h.remove(h.children[i]); } } };
   ch.attachHand = (side, obj, px, py, pz, ry = 0) => {
     const h = side === 'L' ? armL.hand : armR.hand;
     obj.userData.prop = true; h.add(obj); obj.position.set(px, py, pz); obj.rotation.set(0, ry, 0);
@@ -295,7 +314,6 @@ export function createCharacter(opts) {
     ch.t += dt;
     const t = ch.t;
 
-    // orientation & locomotion
     ch.yaw = dampAngle(ch.yaw, ch.targetYaw, 9, dt);
     group.rotation.y = ch.yaw;
     const stride = ch.speed > 2 ? 0.95 : 0.62;
@@ -303,14 +321,14 @@ export function createCharacter(opts) {
     const si = Math.floor(ch.phase / Math.PI);
     if (si !== ch.stepIndex) {
       ch.stepIndex = si;
-      if (ch.speed > 0.35 && ch.onStep) ch.onStep(si % 2, ch.surface());
+      if (ch.speed > 0.35 && ch.onStep && (ch.airK || 0) < 0.5) ch.onStep(si % 2, ch.surface());
     }
     ch.walkK = damp(ch.walkK, clamp(ch.speed / 1.15, 0, 1), 7, dt);
     if (ch.selfDrive && ch.speed > 0) {
       group.position.x += Math.sin(ch.yaw) * ch.speed * dt;
       group.position.z += Math.cos(ch.yaw) * ch.speed * dt;
     }
-    ch.resolveCollisions();
+    if (!ch.externalCollision) ch.resolveCollisions();
 
     // ---- base pose ----
     const w = ch.walkK, p = ch.phase, s = Math.sin(p), c = Math.cos(p);
@@ -328,7 +346,8 @@ export function createCharacter(opts) {
     j.elR.rotation.set(-0.14 - Math.max(0, -s) * 0.28 * w, 0, 0);
 
     const breath = Math.sin(t * 1.35) * 0.5 + 0.5;
-    j.hips.position.y = LEG + (Math.abs(c) * 0.045 - 0.02) * w;
+    j.hips.position.y = LEG;
+    j.torso.position.y = 0.06 + (Math.abs(c) * 0.045 - 0.02) * w;
     j.hips.position.x = Math.sin(t * 0.4) * 0.012 * (1 - w);
     j.hips.rotation.set(0, s * 0.06 * w, Math.sin(t * 0.4) * 0.028 * (1 - w));
     j.torso.rotation.set(
@@ -361,6 +380,23 @@ export function createCharacter(opts) {
     }
     j.torso.rotation.y += fx.torsoYaw;
 
+    // ---- Stage 2 airborne layer (additive; never resets the rig) ----
+    const ak = ch.airK || 0;
+    if (ak > 0.001) {
+      const rise = ch.airRise || 0;
+      const tuck = Math.max(0, rise);
+      j.hipL.rotation.x += (-0.45 * tuck - 0.15) * ak;
+      j.hipR.rotation.x += (-0.30 * tuck - 0.10) * ak;
+      j.kneeL.rotation.x += (0.85 * tuck + 0.35) * ak;
+      j.kneeR.rotation.x += (0.65 * tuck + 0.30) * ak;
+      j.shL.rotation.z += 0.55 * ak;
+      j.shR.rotation.z -= 0.55 * ak;
+      j.shL.rotation.x += -0.35 * ak;
+      j.shR.rotation.x += -0.35 * ak;
+      j.torso.rotation.x += 0.10 * ak * (0.5 + 0.5 * rise);
+      fx.headPitch += -0.08 * ak;
+    }
+
     // ---- head look ----
     let wantYaw, wantPitch;
     if (ch.lookTarget) {
@@ -384,7 +420,6 @@ export function createCharacter(opts) {
     const e = ch.expr, et = ch.exprT;
     for (const key in e) e[key] = damp(e[key], et[key], 8, dt);
 
-    // blink
     ch.blinkTimer -= dt;
     if (ch.blinkTimer <= 0) { ch.blinkT = 0; ch.blinkTimer = 2.2 + Math.random() * 3.4 + (ch.talking ? -0.6 : 0); }
     ch.blinkT += dt;
@@ -393,19 +428,16 @@ export function createCharacter(opts) {
     face.lids[0].scale.y = 0.004 + lid * 0.062;
     face.lids[1].scale.y = 0.004 + lid * 0.062;
 
-    // brows (micro-life so faces are never frozen)
     const micro = Math.sin(t * 0.9) * 0.0012;
     face.brows[0].rotation.z = e.bL; face.brows[1].rotation.z = e.bR;
     face.brows[0].position.y = eyeY + 0.062 + e.bY + micro;
     face.brows[1].position.y = eyeY + 0.062 + e.bY - micro;
 
-    // pupils follow look + expression drift
     const px = clamp(ch.headYawCur * 0.02, -0.018, 0.018);
     const py = clamp(ch.headPitchCur * 0.014, -0.012, 0.012) + e.pY;
     face.pupils[0].position.set(-eyeX + px, eyeY + py, fz + 0.012);
     face.pupils[1].position.set(eyeX + px, eyeY + py, fz + 0.012);
 
-    // mouth: talk oscillation + expression curve
     const talkOpen = ch.talking
       ? clamp(0.14 + 0.42 * (0.5 + 0.5 * Math.sin(t * 11.3) + 0.28 * Math.sin(t * 17.7)), 0, 0.72)
       : 0;
