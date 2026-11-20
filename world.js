@@ -562,8 +562,9 @@ export function buildWorld(scene, renderer) {
   wall(6.0, -16.5, 6.15, -8.5);             // right
   wall(-6.15, -16.65, 4.15, -16.5, S.h, plasterBackM); // back (left of washroom)
   wall(5.05, -16.65, 6.15, -16.5, S.h, plasterBackM);  // back (right)
-  wall(4.15, -16.65, 5.05, -16.5, S.h, plasterBackM).enabled = false; // lintel zone handled below
-  const lintel = box(0.9, S.h - 2.15, 0.15, plasterBackM); lintel.position.set(4.6, 2.15 + (S.h - 2.15) / 2, -16.575); store.add(lintel);
+  const lintel = box(0.9, S.h - 2.15, 0.15, plasterBackM);
+  lintel.position.set(4.6, 2.15 + (S.h - 2.15) / 2, -16.575); store.add(lintel);
+  solid(4.15, 2.15, -16.65, 5.05, S.h, -16.5);          // lintel collider only — doorway stays open
 
   // front wall: piers, knee wall, transom, sign band
   const pierM = mat('#28303a', 0.6, 0.35);
@@ -788,7 +789,9 @@ export function buildWorld(scene, renderer) {
   const baguette = box(0.085, 0.36, 0.085, mat('#d8a35c', 0.8)); baguette.position.set(-0.05, 0.10, 0); baguette.rotation.z = 0.16; groceries.add(baguette);
   for (let i = 0; i < 3; i++) { const score = box(0.09, 0.014, 0.02, mat('#b07a3a', 0.85), false); score.position.set(-0.05 - 0.028 * (i - 1), 0.05 + i * 0.09, 0.043); score.rotation.z = 0.5; groceries.add(score); }
   const carton = box(0.19, 0.065, 0.11, mat('#b7ab97', 0.9)); carton.position.set(0.055, 0.02, 0); carton.rotation.z = -0.1; groceries.add(carton);
-  const groceryHome = new THREE.Group(); groceryHome.position.set(-3.9, 1.43, -12.55); store.add(groceryHome);
+  const counterAnchor = new THREE.Group();
+  counterAnchor.position.set(-3.4, 1.28, -10.55); store.add(counterAnchor);
+  const groceryHome = new THREE.Group(); groceryHome.position.set(-3.72, 1.43, -12.42); store.add(groceryHome);
   groceryHome.add(groceries); groceries.rotation.y = 0.3;
   groceries.userData.prop = true;
 
@@ -808,11 +811,15 @@ export function buildWorld(scene, renderer) {
     doorLook: V(2.2, 1.45, -8.55),
     washDoorLook: V(4.6, 1.3, -16.5),
     pedA: V(-28, 0, 6.4), pedB: V(8, 0, 6.4),
+    counterBag: V(-3.4, 1.28, -10.55),
+    keeperOffer: V(-3.4, 0, -11.35),
+    keeperPick: V(-3.7, 0, -11.95),
+    heroReceive: V(-3.4, 0, -9.80),
   };
 
   return {
     colliders, updaters, hooks, sun, spots, isInside,
     doors: { entry: entryDoor, washroom: washDoor },
-    props: { groceries, groceryHome, cloth },
+    props: { groceries, groceryHome, counterAnchor, cloth },
   };
 }

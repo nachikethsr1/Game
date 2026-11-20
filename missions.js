@@ -194,7 +194,7 @@ export class Director {
     audio.setInterior(false);
 
     // Shot A — crane establishing
-    this.shot(dolly(V(-34, 16, 24), V(-20, 6.5, 13), V(-8, 3, -6), V(-2, 2.2, -7.5), { dur: 6.4, fov: 48, fov1: 44, shake: 0.5 }));
+    this.shot(dolly(V(-36, 18, 6), V(-24, 7.5, 4.6), V(-6, 2.5, -7.5), V(-1, 2.2, -7.5), { dur: 6.6, fov: 48, fov1: 44, shake: 0.5 }));
     const locBeat = (async () => { await this.wait(0.9); ui.location(true); await this.wait(4.2); ui.location(false); })();
     await step(Promise.all([
       this.walk(hero, [W.heroStart, V(-17.4, 0, -6.4)], 1.35),
@@ -202,7 +202,7 @@ export class Director {
     ]));
 
     // Shot B — front three-quarter tracking
-    this.shot(track(hero, V(2.6, 1.5, 2.2), V(2.3, 1.55, 2.0), { dur: 5.2, fov: 40 }));
+    this.shot(track(hero, V(2.4, 1.5, -1.6), V(2.2, 1.52, -1.55), { dur: 5.6, fov: 40 }));
     hero.playClip('lookAround', 3.0);
     await step(this.walk(hero, [hero.group.position.clone(), V(-10.6, 0, -6.4)], 1.35));
 
@@ -221,12 +221,17 @@ export class Director {
       glance,
     ]));
 
-    // Shot D — wide reveal of the market across the street
-    const doorPt = V(2.2, 1.6, -8.5);
+    // Shot D — wide reveal of the market (aim routed clear of the door pier)
+    const doorPt = V(2.2, 1.5, -8.5), doorWp = V(2.2, 1.6, -7.2);
     this.shot({
-      dur: 5.6, fov: 42, fov1: 40, ease: easeIO, cut: true, shake: 0.6,
-      pos: (e, out) => out.lerpVectors(V(-2, 2.0, 4.8), V(5.5, 1.8, 4.2), e),
-      tgt: (e, out) => { H(); out.lerpVectors(this._h1, doorPt, easeIO(clamp((e - 0.45) / 0.55, 0, 1))); },
+      dur: 5.9, fov: 42, fov1: 40, ease: easeIO, cut: true, shake: 0.6,
+      pos: (e, out) => out.lerpVectors(V(-2, 2.0, 4.8), V(3.2, 1.9, 4.2), e),
+      tgt: (e, out) => {
+        H();
+        const k = clamp((e - 0.45) / 0.55, 0, 1);
+        if (k < 0.6) out.lerpVectors(this._h1, doorWp, k / 0.6);
+        else out.lerpVectors(doorWp, doorPt, (k - 0.6) / 0.4);
+      },
     });
     await step(this.walk(hero, [hero.group.position.clone(), W.doorFront], 1.35));
 
@@ -296,29 +301,41 @@ export class Director {
     keeper.playClip('nod');
     await step(this.wait(0.5));
 
-    // — the hand-over: turn, pick up, offer, receive —
-    this.shot(dolly(V(-1.2, 1.5, -9.8), V(-0.6, 1.6, -10.4), V(-3.6, 1.35, -11.8), V(-3.8, 1.25, -12.2), { dur: 4.2, fov: 42, cut: false, shake: 0.6 }));
+    // — the hand-over: step, pick up, carry back, place on the counter, hero collects —
+    this.shot(dolly(V(-1.2, 1.5, -9.8), V(-0.6, 1.6, -10.4), V(-3.6, 1.35, -11.8), V(-3.7, 1.3, -12.0), { dur: 4.6, fov: 42, cut: false, shake: 0.6 }));
     await step(this.turn(keeper, Math.PI));
     keeper.setExpression('neutral');
-    keeper.playClip('pickup');
-    await step(this.wait(0.8));
+    await step(this.walk(keeper, [W.keeper, W.keeperPick], 0.8));
+    keeper.playClip('pickShelf');
+    await step(this.wait(0.75));
     audio.paper();
     keeper.attachHand('R', world.props.groceries, 0, -0.04, 0.05, 0.2);
-    await step(this.wait(0.85));
+    await step(this.wait(0.8));
+    await step(this.walk(keeper, [W.keeperPick, W.keeperOffer], 0.8));
     await step(this.turn(keeper, 0));
     keeper.setExpression('warm');
-    this.shot(hold(V(-1.5, 1.55, -9.6), V(-3.4, 1.3, -10.7), { dur: 3.6, fov: 40, cut: true, shake: 0.6 }));
-    keeper.playClip('offer');
-    hero.setExpression('smile'); hero.playClip('receive');
-    await step(this.wait(0.95));
+    this.shot(hold(V(-1.5, 1.55, -9.6), V(-3.4, 1.28, -10.55), { dur: 6.4, fov: 40, cut: true, shake: 0.6 }));
+    keeper.playClip('place');
+    await step(this.wait(0.85));
+    audio.paper();
+    world.props.counterAnchor.add(world.props.groceries);
+    world.props.groceries.position.set(0, 0, 0);
+    world.props.groceries.rotation.set(0, 0.15, 0);
+    await step(this.wait(0.7));
+    keeper.setExpression('happy');
+    hero.setExpression('smile');
+    await step(this.walk(hero, [W.counterHero, W.heroReceive], 0.7));
+    hero.playClip('pickup');
+    await step(this.wait(0.75));
     audio.paper();
     hero.attachHand('R', world.props.groceries, 0, -0.04, 0.05, -0.2);
-    await step(this.wait(0.8));
-    // shift the bag to the left hand and carry
+    await step(this.wait(0.75));
     hero.attachHand('L', world.props.groceries, 0, -0.03, 0.04, 0.15);
     hero.setLoop('carry');
     hero.playClip('nod');
-    await step(this.wait(0.7));
+    await step(this.walk(hero, [W.heroReceive, W.counterHero], 0.7));
+    await step(this.turn(hero, Math.PI));
+    await step(this.wait(0.4));
 
     // lines 6 & 7 — two-shot
     this.shot(hold(V(0.6, 1.7, -9.0), V(-3.3, 1.35, -10.6), { dur: 9.0, fov: 44, shake: 0.6 }));
@@ -331,7 +348,19 @@ export class Director {
     K(); keeper.lookAt(null);
 
     // — walk to the washroom, tracked over the shelves —
-    this.shot(track(hero, V(-1.7, 2.0, 1.6), V(-1.9, 2.05, 1.7), { dur: 8.4, fov: 42, shake: 0.6 }));
+    this.shot({
+      dur: 15.2, fov: 42, ease: linear, cut: true, shake: 0.6,
+      pos: (e, out) => {
+        const b = clamp((e - 0.30) / 0.30, 0, 1);
+        const p = hero.group.position;
+        out.set(
+          Math.max(p.x + lerp(-0.55, -1.8, b), 1.95),
+          lerp(1.95, 2.02, b),
+          Math.min(p.z + lerp(1.95, 1.65, b), -8.95)
+        );
+      },
+      tgt: (e, out) => { hero.headWorld(out); },
+    });
     await step(this.walk(hero, [W.counterHero, V(1.2, 0, -9.6), V(5.15, 0, -10.6), V(5.15, 0, -15.3), W.washFront], 1.3));
     await step(this.turn(hero, Math.PI));
     hero.lookAt(W.washDoorLook);
@@ -346,7 +375,7 @@ export class Director {
     // — hold on the shopkeeper; the city hums; fade —
     ui.scene('SCENE 3 — BREAD & EGGS');
     keeper.setLoop('wipe'); keeper.setExpression('warm');
-    this.shot(dolly(V(2.6, 1.75, -9.0), V(2.2, 1.7, -9.2), V(-0.5, 1.4, -13.5), V(-1.2, 1.35, -13.0), { dur: 4.4, fov: 46, cut: true, shake: 0.5 }));
+    this.shot(dolly(V(4.95, 2.0, -9.3), V(4.7, 1.9, -9.6), V(-3.4, 1.35, -11.35), V(-3.4, 1.35, -11.35), { dur: 4.4, fov: 46, cut: true, shake: 0.5 }));
     await step(this.wait(3.6));
 
     this.running = false;

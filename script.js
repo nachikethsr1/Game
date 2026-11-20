@@ -305,7 +305,7 @@ class CameraRig {
     if (this.mode === 'title') {
       this.tt += dt;
       const a = 0.62 + Math.sin(this.tt * 0.05) * 0.34;
-      this.dp.set(Math.sin(a) * 19 - 2, 5.6 + Math.sin(this.tt * 0.11) * 0.5, Math.cos(a) * 19 - 2);
+      this.dp.set(Math.sin(a) * 13 - 3, 5.2 + Math.sin(this.tt * 0.15) * 0.4, Math.cos(a) * 10 - 1.5);
       this.dtg.set(-0.5, 2.3, -7.5);
       fovT = 44; shake = 0.25;
     } else if (this.shot) {
@@ -529,7 +529,6 @@ async function startCinematic() {
   show($('title'), false); show($('hud'), true); show($('topRight'), true);
   await fadeTo(1, 500);
   resetScene();
-  rig.setShot(null); rig.mode = 'shot';
   director.start();
   lastCursorMove = performance.now();
   fadeTo(0, 1100);

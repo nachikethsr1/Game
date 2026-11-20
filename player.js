@@ -84,15 +84,24 @@ const CLIPS = {
     c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.28, k);
     c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.22, k);
     c.j.torso.rotation.x += 0.08 * k; } },
-  pickup:    { dur: 1.6, fn(c, t, k) {
-    c.j.torso.rotation.x = lerp(c.j.torso.rotation.x, 0.40, k);
-    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -0.80, k);
-    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.35, k);
-    c.fx.headPitch += 0.34 * k; } },
-  offer:     { dur: 2.1, fn(c, t, k) {
-    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.38, k);
-    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.32, k);
-    c.j.torso.rotation.x += 0.10 * k; } },
+  pickup:    { dur: 1.5, fn(c, t, k) {
+    c.j.torso.rotation.x = lerp(c.j.torso.rotation.x, 0.15, k);
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.56, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, 0.02, k);
+    c.fx.headPitch += 0.25 * k; } },
+  pickShelf: { dur: 1.5, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.20, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -1.08, k);
+    c.fx.headPitch += 0.20 * k; } },
+  place:     { dur: 1.5, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.56, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, 0.02, k);
+    c.j.torso.rotation.x += 0.15 * k;
+    c.fx.headPitch += 0.18 * k; } },
+  offer:     { dur: 2.0, fn(c, t, k) {
+    c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.45, k);
+    c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.20, k);
+    c.j.torso.rotation.x += 0.30 * k; } },
   receive:   { dur: 1.7, fn(c, t, k) {
     c.j.shR.rotation.x = lerp(c.j.shR.rotation.x, -1.30, k);
     c.j.elR.rotation.x = lerp(c.j.elR.rotation.x, -0.30, k);
@@ -279,7 +288,7 @@ export function createCharacter(opts) {
       for (const c of colliders) {
         if (!c.enabled) continue;
         const b = c.box;
-        if (p.x > b.min.x - r && p.x < b.max.x + r && p.z > b.min.z - r && p.z < b.max.z + r && b.max.y > 0.25) {
+        if (p.x > b.min.x - r && p.x < b.max.x + r && p.z > b.min.z - r && p.z < b.max.z + r && b.max.y > 0.25 && b.min.y < 1.9) {
           const dxl = p.x - (b.min.x - r), dxr = (b.max.x + r) - p.x;
           const dzl = p.z - (b.min.z - r), dzr = (b.max.z + r) - p.z;
           const m = Math.min(dxl, dxr, dzl, dzr);
@@ -328,7 +337,8 @@ export function createCharacter(opts) {
     j.elR.rotation.set(-0.14 - Math.max(0, -s) * 0.28 * w, 0, 0);
 
     const breath = Math.sin(t * 1.35) * 0.5 + 0.5;
-    j.hips.position.y = LEG + (Math.abs(c) * 0.045 - 0.02) * w;
+    j.hips.position.y = LEG;
+    j.torso.position.y = 0.06 + (Math.abs(c) * 0.045 - 0.02) * w;
     j.hips.position.x = Math.sin(t * 0.4) * 0.012 * (1 - w);
     j.hips.rotation.set(0, s * 0.06 * w, Math.sin(t * 0.4) * 0.028 * (1 - w));
     j.torso.rotation.set(
