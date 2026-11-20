@@ -2,22 +2,22 @@
 // OPERATION INDIA — script.js
 // Engine: renderer, cinematic camera rig, procedural audio +
 // recorded-file support, state machine, UI, main loop.
+// Stage 2 adds: gameplay state, pointer lock, blend rig modes.
 // ============================================================
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildWorld } from './world.js';
 import { createCharacter, EYE_Y } from './player.js';
 import { Director } from './missions.js';
+import { PlayerController, GameplayCamera } from './controls.js';
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp, damp = THREE.MathUtils.damp, lerp = THREE.MathUtils.lerp;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const easeIOG = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
 // ------------------------------------------------------------
-// AUDIO — synthesized fallbacks + optional recorded files.
-// Drop the manifest files beside index.html; missing = silence,
-// never a crash. No voices are generated; dialogue is subtitled
-// until recorded lines are supplied.
+// AUDIO — unchanged from Stage 1
 // ------------------------------------------------------------
 const AUDIO_FILES = {
   music: 'music_main.mp3', ambStreet: 'amb_street.mp3', ambStore: 'amb_store.mp3',
@@ -56,7 +56,6 @@ class AudioManager {
       this.musicDuck = c.createGain(); this.musicDuck.gain.value = 1;
       this.musicGain = c.createGain(); this.musicGain.gain.value = 0;
       this.musicDuck.connect(this.musicGain); this.musicGain.connect(this.master);
-      // shared noise buffer
       const len = c.sampleRate * 2;
       this.noiseBuf = c.createBuffer(1, len, c.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
@@ -64,7 +63,6 @@ class AudioManager {
       this.brownBuf = c.createBuffer(1, len, c.sampleRate);
       const b = this.brownBuf.getChannelData(0); let last = 0;
       for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; b[i] = last * 3.5; }
-      // decode short recorded sfx if present
       for (const key of ['stepConcrete', 'stepTile', 'doorOpen', 'doorClose', 'chime', 'paper']) {
         fetch('./' + AUDIO_FILES[key]).then((r) => { if (!r.ok) throw 0; return r.arrayBuffer(); })
           .then((ab) => c.decodeAudioData(ab)).then((buf) => { this.buffers[key] = buf; }).catch(() => {});
@@ -127,7 +125,7 @@ class AudioManager {
     this.delay.connect(fb); fb.connect(this.delay); this.delay.connect(wet); wet.connect(this.musicDuck);
     this.padFilter.connect(this.musicDuck); this.padFilter.connect(this.delay);
     this.musicGain.gain.setTargetAtTime(0.17, c.currentTime, 2.5);
-    this.chordT = 99; // trigger first chord immediately on update
+    this.chordT = 99;
   }
   _chord() {
     if (!this.synthMusic || !this.ctx) return;
@@ -287,7 +285,7 @@ class AudioManager {
 }
 
 // ------------------------------------------------------------
-// CAMERA RIG — collision-aware cinematic camera
+// CAMERA RIG — cinematic modes unchanged + gameplay/blend modes
 // ------------------------------------------------------------
 class CameraRig {
   constructor(camera, colliders) {
@@ -297,15 +295,48 @@ class CameraRig {
     this.dp = new THREE.Vector3(); this.dtg = new THREE.Vector3();
     this.dir = new THREE.Vector3(); this.tmp = new THREE.Vector3();
     this.ray = new THREE.Ray(); this.fov = 42; this.cutPending = true;
+    this.gp = null; this.gpChar = null; this.gpSnap = true;
+    this._gpPos = new THREE.Vector3(); this._gpTgt = new THREE.Vector3();
+    this.bt = 0; this.bDur = 1.4;
+    this.bFromPos = new THREE.Vector3(); this.bFromTgt = new THREE.Vector3(); this.bFromFov = 42;
   }
   setShot(def) { this.shot = def; this.st = 0; this.mode = def ? 'shot' : 'title'; this.cutPending = def ? def.cut !== false : false; }
   setTitle() { this.shot = null; this.mode = 'title'; this.cutPending = false; }
+  beginBlend(gp, char, dur) {
+    this.gp = gp; this.gpChar = char;
+    this.bFromPos.copy(this.pos); this.bFromTgt.copy(this.tgt); this.bFromFov = this.fov;
+    this.bt = 0; this.bDur = dur; this.mode = 'blend'; this.cutPending = false; this.gpSnap = true;
+  }
+  setGameplay(gp, char) { this.gp = gp; this.gpChar = char; this.mode = 'gameplay'; this.gpSnap = true; }
+  _gpUpdate(dt) {
+    this.gp.computePose(this.gpChar, dt, this._gpPos, this._gpTgt);
+    const fovT = this.gp.fov;
+    if (this.mode === 'blend') {
+      this.bt += dt;
+      const k = easeIOG(clamp(this.bt / this.bDur, 0, 1));
+      this.pos.lerpVectors(this.bFromPos, this._gpPos, k);
+      this.tgt.lerpVectors(this.bFromTgt, this._gpTgt, k);
+      this.fov = this.bFromFov + (fovT - this.bFromFov) * k;
+      if (this.bt >= this.bDur) this.mode = 'gameplay';
+    } else {
+      if (this.gpSnap) { this.pos.copy(this._gpPos); this.tgt.copy(this._gpTgt); this.fov = fovT; this.gpSnap = false; }
+      else {
+        this.pos.lerp(this._gpPos, 1 - Math.exp(-10 * dt));
+        this.tgt.lerp(this._gpTgt, 1 - Math.exp(-12 * dt));
+        this.fov = damp(this.fov, fovT, 6, dt);
+      }
+    }
+    this.camera.position.copy(this.pos);
+    this.camera.lookAt(this.tgt);
+    if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
+  }
   update(dt) {
+    if (this.mode === 'blend' || this.mode === 'gameplay') { this._gpUpdate(dt); return; }
     let fovT = 42, shake = 0;
     if (this.mode === 'title') {
       this.tt += dt;
       const a = 0.62 + Math.sin(this.tt * 0.05) * 0.34;
-      this.dp.set(Math.sin(a) * 19 - 2, 5.6 + Math.sin(this.tt * 0.11) * 0.5, Math.cos(a) * 19 - 2);
+      this.dp.set(Math.sin(a) * 13 - 3, 5.2 + Math.sin(this.tt * 0.15) * 0.4, Math.cos(a) * 10 - 1.5);
       this.dtg.set(-0.5, 2.3, -7.5);
       fovT = 44; shake = 0.25;
     } else if (this.shot) {
@@ -315,7 +346,6 @@ class CameraRig {
       s.pos(e, this.dp); s.tgt(e, this.dtg);
       fovT = lerp(s.fov, s.fov1, e); shake = s.shake;
     }
-    // obstruction: pull camera in front of solid geometry
     this.dir.subVectors(this.dp, this.dtg);
     const len = this.dir.length();
     if (len > 0.001) {
@@ -333,7 +363,6 @@ class CameraRig {
       this.dp.copy(this.dtg).addScaledVector(this.dir, Math.min(len, hit));
     }
     this.dp.y = Math.max(this.dp.y, 0.32);
-    // handheld breath
     if (!reducedMotion && shake > 0) {
       const t = this.mode === 'title' ? this.tt : this.st;
       this.dp.x += Math.sin(t * 1.31 + 2) * 0.018 * shake;
@@ -356,10 +385,12 @@ class CameraRig {
 }
 
 // ------------------------------------------------------------
-// BOOT
+// BOOT / STATE
 // ------------------------------------------------------------
 let renderer, scene, camera, rig, world, audio, director;
 let hero, keeper, ped;
+let gpCam = null, player = null, pausedFlag = false;
+let tutorialTimer = null, toastTimer = null, talkTimer = null;
 let state = 'boot';
 let rafId = 0, elapsed = 0, lastCursorMove = 0;
 const clock = new THREE.Clock();
@@ -368,11 +399,10 @@ let subsOn = true, quality = 'high';
 let fadeTimer = null;
 
 function setBodyState(s) {
-  document.body.classList.remove('state-boot', 'state-title', 'state-cinematic', 'state-paused', 'state-end');
+  document.body.classList.remove('state-boot', 'state-title', 'state-cinematic', 'state-paused', 'state-end', 'state-gameplay');
   document.body.classList.add('state-' + s);
 }
 function show(el, b) { el.classList.toggle('hidden', !b); }
-
 function fadeTo(alpha, ms) {
   return new Promise((res) => {
     const f = $('fade');
@@ -382,7 +412,6 @@ function fadeTo(alpha, ms) {
     fadeTimer = setTimeout(() => { fadeTimer = null; res(); }, ms + 40);
   });
 }
-
 function buildUI() {
   ui.subtitle = (speaker, text) => {
     const w = $('subWrap');
@@ -394,8 +423,21 @@ function buildUI() {
   ui.scene = (t) => { $('sceneTxt').textContent = t; };
   ui.location = (b) => $('locCard').classList.toggle('show', b);
   ui.advHint = (b) => $('advHint').classList.toggle('show', b);
+  ui.interactHint = (label) => {
+    const el = $('interactHint');
+    if (!label) { el.classList.remove('show'); return; }
+    $('interactTxt').textContent = label;
+    el.classList.add('show');
+  };
+  ui.toast = (msg) => {
+    const el = $('toast');
+    if (!msg) { el.classList.remove('show'); return; }
+    el.textContent = msg;
+    el.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastTimer = null; el.classList.remove('show'); }, 2400);
+  };
 }
-
 function fatal(msg) {
   $('fatalMsg').textContent = msg;
   show($('fatal'), true);
@@ -421,7 +463,7 @@ async function boot() {
       pmrem.dispose();
     }],
     ['Pouring concrete, laying brick…', () => { world = buildWorld(scene, renderer); }],
-    ['Stocking the market…', () => { /* interior built with the block; step kept for pacing */ }],
+    ['Stocking the market…', () => {}],
     ['Casting the evening…', () => {
       const opts = { colliders: world.colliders, isInside: world.isInside };
       hero = createCharacter({
@@ -450,7 +492,8 @@ async function boot() {
       rig = new CameraRig(camera, world.colliders);
       audio = new AudioManager();
       buildUI();
-      director = new Director({ hero, keeper, world, rig, audio, ui, onEnd: onCinematicEnd });
+      director = new Director({ hero, keeper, world, rig, audio, ui, onEnd: onCinematicEnd, onGameplay });
+      buildGameplay();
       wireAudioHooks();
       wireInput();
     }],
@@ -469,7 +512,97 @@ async function boot() {
 }
 
 // ------------------------------------------------------------
-// world ambient life: pedestrian brain + audio hooks
+// STAGE 2 — gameplay construction & handoff
+// ------------------------------------------------------------
+function buildGameplay() {
+  gpCam = new GameplayCamera(world.colliders);
+  player = new PlayerController(hero, world, gpCam, {
+    onJump: () => audio.step(hero.surface(), 0.22),
+    onLand: (s) => audio.step(s, 0.5),
+    onBoundary: () => ui.toast('You cannot leave the mission area right now.'),
+    onInteractHint: (label) => ui.interactHint(label),
+    onDoorBlocked: () => ui.toast('Step clear of the doorway first.'),
+  });
+  world.interactables.push(
+    { id: 'entry', kind: 'door', door: world.doors.entry, pos: new THREE.Vector3(2.2, 0, -8.55),
+      radius: 1.5, hingeX: 1.72, width: 0.96,
+      enabled: () => state === 'gameplay',
+      label: () => world.doors.entry.t > 0.5 ? 'Close door' : 'Open door',
+      action: (pc) => pc.toggleDoor(world.doors.entry, () => audio.doorOpen(), () => audio.doorClose(), () => audio.chime()) },
+    { id: 'washroom', kind: 'door', door: world.doors.washroom, pos: new THREE.Vector3(4.6, 0, -16.5),
+      radius: 1.4, hingeX: 4.17, width: 0.86,
+      enabled: () => state === 'gameplay',
+      label: () => world.doors.washroom.t > 0.5 ? 'Close door' : 'Open door',
+      action: (pc) => pc.toggleDoor(world.doors.washroom, () => audio.doorOpen(), () => audio.doorClose(), null) },
+    { id: 'keeper', kind: 'talk', pos: world.spots.keeper.clone(), radius: 1.9,
+      enabled: () => state === 'gameplay',
+      label: () => 'Talk to the shopkeeper',
+      action: () => {
+        keeper.lookAt(hero.headWorld(new THREE.Vector3()));
+        keeper.setExpression('happy'); keeper.playClip('wave');
+        ui.toast('The shopkeeper gives you a friendly wave.');
+        if (talkTimer) clearTimeout(talkTimer);
+        talkTimer = setTimeout(() => { talkTimer = null; keeper.lookAt(null); keeper.setExpression('warm'); }, 2600);
+      } },
+    { id: 'register', kind: 'inspect', pos: new THREE.Vector3(-4.6, 0, -10.6), radius: 1.3,
+      enabled: () => state === 'gameplay',
+      label: () => 'Check the register',
+      action: () => { hero.playClip('reach'); ui.toast('The register drawer is locked.'); } },
+  );
+}
+function onGameplay() {
+  state = 'gameplay'; setBodyState('gameplay'); pausedFlag = false;
+  show($('hud'), false); show($('topRight'), true); show($('pause'), false);
+  hero.externalCollision = true;
+  player.engage();
+  rig.beginBlend(gpCam, hero, 1.4);
+  show($('veil'), true);
+  ui.interactHint(null);
+  document.body.classList.remove('cursor-hide');
+}
+function requestLock() {
+  const el = renderer.domElement;
+  try {
+    const p = el.requestPointerLock({ unadjustedMovement: true });
+    if (p && p.catch) p.catch(() => { try { el.requestPointerLock(); } catch (e) {} });
+  } catch (e) { try { el.requestPointerLock(); } catch (e2) {} }
+}
+function onLockChange() {
+  const locked = document.pointerLockElement === renderer.domElement;
+  document.body.classList.toggle('locked', locked && state === 'gameplay');
+  if (state !== 'gameplay') { if (locked) document.exitPointerLock(); return; }
+  player.setLocked(locked);
+  if (locked) {
+    show($('veil'), false); show($('pause'), false);
+    if (pausedFlag) { pausedFlag = false; audio.resume(); }
+    showTutorial();
+    document.body.classList.add('cursor-hide');
+  } else if (!pausedFlag) {
+    pauseGame();
+  }
+}
+function showTutorial() {
+  const t = $('tutorial');
+  t.classList.add('show');
+  if (tutorialTimer) clearTimeout(tutorialTimer);
+  tutorialTimer = setTimeout(() => { tutorialTimer = null; t.classList.remove('show'); }, 9000);
+}
+function gameplayPause() {
+  pausedFlag = true;
+  show($('pause'), true);
+  audio.suspend();
+  document.body.classList.remove('cursor-hide', 'locked');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function gameplayResume() {
+  show($('pause'), false);
+  pausedFlag = false;
+  audio.resume();
+  requestLock();
+}
+
+// ------------------------------------------------------------
+// ambient life + audio hooks (unchanged)
 // ------------------------------------------------------------
 let pedState = 'walk', pedTimer = 0, pedDir = 1;
 function pedestrianBrain(dt) {
@@ -500,6 +633,13 @@ function wireAudioHooks() {
 // ------------------------------------------------------------
 function resetScene() {
   director.stop();
+  if (player) player.disengage();
+  hero.externalCollision = false;
+  pausedFlag = false;
+  document.body.classList.remove('locked');
+  show($('veil'), false);
+  $('tutorial').classList.remove('show');
+  ui.interactHint(null); ui.toast(null);
   hero.clearHands(); keeper.clearHands();
   world.props.groceryHome.add(world.props.groceries);
   world.props.groceries.position.set(0, 0, 0);
@@ -529,12 +669,12 @@ async function startCinematic() {
   show($('title'), false); show($('hud'), true); show($('topRight'), true);
   await fadeTo(1, 500);
   resetScene();
-  rig.setShot(null); rig.mode = 'shot';
   director.start();
   lastCursorMove = performance.now();
   fadeTo(0, 1100);
 }
 function pauseGame() {
+  if (state === 'gameplay') { gameplayPause(); return; }
   if (state !== 'cinematic') return;
   state = 'paused'; setBodyState('paused');
   show($('pause'), true);
@@ -542,6 +682,7 @@ function pauseGame() {
   document.body.classList.remove('cursor-hide');
 }
 function resumeGame() {
+  if (state === 'gameplay') { gameplayResume(); return; }
   if (state !== 'paused') return;
   state = 'cinematic'; setBodyState('cinematic');
   show($('pause'), false);
@@ -549,8 +690,11 @@ function resumeGame() {
   lastCursorMove = performance.now();
 }
 async function replayCinematic() {
-  if (state !== 'paused' && state !== 'end') return;
-  show($('pause'), false); show($('end'), false);
+  const from = state;
+  if (from !== 'paused' && from !== 'end' && !(from === 'gameplay' && pausedFlag)) return;
+  show($('pause'), false); show($('end'), false); show($('veil'), false);
+  pausedFlag = false;
+  if (document.pointerLockElement) document.exitPointerLock();
   state = 'cinematic'; setBodyState('cinematic');
   audio.resume();
   await fadeTo(1, 450);
@@ -561,8 +705,11 @@ async function replayCinematic() {
   fadeTo(0, 900);
 }
 async function quitToTitle() {
-  if (state !== 'paused' && state !== 'end') return;
-  show($('pause'), false); show($('end'), false);
+  const from = state;
+  if (from !== 'paused' && from !== 'end' && !(from === 'gameplay' && pausedFlag)) return;
+  show($('pause'), false); show($('end'), false); show($('veil'), false);
+  pausedFlag = false;
+  if (document.pointerLockElement) document.exitPointerLock();
   await fadeTo(1, 450);
   audio.resume();
   enterTitle();
@@ -613,7 +760,10 @@ function setQuality(q) {
 }
 function wireInput() {
   $('startBtn').addEventListener('click', startCinematic);
-  $('pauseBtn').addEventListener('click', () => state === 'cinematic' ? pauseGame() : resumeGame());
+  $('pauseBtn').addEventListener('click', () => {
+    if (state === 'gameplay') { pausedFlag ? gameplayResume() : gameplayPause(); return; }
+    state === 'cinematic' ? pauseGame() : resumeGame();
+  });
   $('resumeBtn').addEventListener('click', resumeGame);
   $('replayBtn').addEventListener('click', replayCinematic);
   $('quitBtn').addEventListener('click', quitToTitle);
@@ -627,21 +777,40 @@ function wireInput() {
   $('qLow').addEventListener('click', () => setQuality('low'));
   $('reloadBtn').addEventListener('click', () => location.reload());
 
+  // ---- Stage 2: pointer lock + gameplay camera input ----
+  $('veil').addEventListener('click', () => { if (state === 'gameplay') requestLock(); });
+  document.addEventListener('pointerlockchange', onLockChange);
+  document.addEventListener('pointerlockerror', () => { if (state === 'gameplay') show($('veil'), true); });
+  window.addEventListener('mousemove', (e) => {
+    if (state === 'gameplay' && document.pointerLockElement === renderer.domElement && !pausedFlag) {
+      gpCam.onMouse(e.movementX || 0, e.movementY || 0);
+    }
+  });
+  renderer.domElement.addEventListener('wheel', (e) => {
+    if (state === 'gameplay') { e.preventDefault(); gpCam.onWheel(e.deltaY); }
+  }, { passive: false });
+
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') e.preventDefault();
+    if (e.code === 'Space' && (state === 'cinematic' || state === 'gameplay')) e.preventDefault();
     if (state === 'boot' || state === 'fatal') return;
     switch (e.code) {
       case 'Enter':
         if (state === 'title') startCinematic();
         else if (state === 'cinematic') director.advance();
         else if (state === 'end') replayCinematic();
+        else if (state === 'gameplay' && !document.pointerLockElement && !pausedFlag) requestLock();
         break;
       case 'Space':
         if (state === 'cinematic') director.advance();
         else if (state === 'title') startCinematic();
         break;
       case 'Escape':
-        if (state === 'cinematic') pauseGame();
+        if (state === 'gameplay') {
+          if (document.pointerLockElement) { /* browser unlocks; lockchange opens pause */ }
+          else if (pausedFlag) gameplayResume();
+          else gameplayPause();
+        }
+        else if (state === 'cinematic') pauseGame();
         else if (state === 'paused') resumeGame();
         break;
       case 'KeyM': setMuted(!audio.muted); break;
@@ -655,12 +824,14 @@ function wireInput() {
   $('game').addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('mousemove', () => {
     lastCursorMove = performance.now();
-    document.body.classList.remove('cursor-hide');
+    if (state !== 'gameplay') document.body.classList.remove('cursor-hide');
   });
   window.addEventListener('resize', onResize);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { if (state === 'cinematic') pauseGame(); else audio.suspend(); }
-    else if (state !== 'paused') audio.resume();
+    if (document.hidden) {
+      if (state === 'cinematic' || state === 'gameplay') pauseGame();
+      else audio.suspend();
+    } else if (state !== 'paused' && !pausedFlag) audio.resume();
   });
   renderer.domElement.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
@@ -680,24 +851,23 @@ function onResize() {
 function loop() {
   rafId = requestAnimationFrame(loop);
   const raw = Math.min(clock.getDelta(), 0.05);
-  const sim = state === 'paused' ? 0 : raw;
+  const sim = (state === 'paused' || pausedFlag) ? 0 : raw;
   elapsed += sim;
 
   if (state === 'cinematic') director.update(sim);
+  if (state === 'gameplay') player.update(sim);
   hero.update(sim); keeper.update(sim); ped.update(sim);
   pedestrianBrain(sim);
   for (const u of world.updaters) u(sim, elapsed);
   rig.update(state === 'title' ? raw : sim);
   audio.update(raw);
 
-  // auto-hide cursor during playback
   if (state === 'cinematic' && performance.now() - lastCursorMove > 2500) {
     document.body.classList.add('cursor-hide');
   }
   renderer.render(scene, camera);
 }
 
-// ------------------------------------------------------------
 try {
   boot().catch((e) => { console.error(e); fatal('The projector failed to start: ' + (e && e.message ? e.message : e)); });
 } catch (e) {
