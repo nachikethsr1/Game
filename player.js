@@ -298,7 +298,7 @@ export function createCharacter(opts) {
       for (const c of colliders) {
         if (!c.enabled) continue;
         const b = c.box;
-        if (p.x > b.min.x - r && p.x < b.max.x + r && p.z > b.min.z - r && p.z < b.max.z + r && b.max.y > 0.25) {
+        if (p.x > b.min.x - r && p.x < b.max.x + r && p.z > b.min.z - r && p.z < b.max.z + r && b.max.y > 0.25 && b.min.y < 1.9) {
           const dxl = p.x - (b.min.x - r), dxr = (b.max.x + r) - p.x;
           const dzl = p.z - (b.min.z - r), dzr = (b.max.z + r) - p.z;
           const m = Math.min(dxl, dxr, dzl, dzr);
